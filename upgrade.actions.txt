@@ -1,0 +1,82 @@
+#!/opt/Shell/tooling/device-apply/bin/device-apply -A
+# Upload a new image
+
+[Define]
+debug=1
+ftp=1
+verify=1
+device_name = ${global.device_name}
+
+[Include File=ios.actions.txt]
+argument: debug
+
+define: filesystem
+define: new_file
+define: have_file
+
+# Load FTP credentials
+[Define BodyFromFile=~/shell-lab.ftp.gpg, Secret=False, Prefix=ftp_]
+
+# Hide FTP password in logs
+[Secret]
+${ftp_Password}
+
+# If ftp_server is unset replace it by the local IP address
+# (so this will become the local jumpserver IP)
+[If FromVariable=ftp_Server]
+0.0.0.0
+  [Assign]
+  ftp_Server = ${global.device_local_ip}
+[EndIf]
+
+[If Not,FromVariable=debug]
+0
+  [Print]
+  FTP:
+    me = ftpuser
+    user = ${ftp_User}
+    pass = ${ftp_Password}
+    host = ${ftp_Server}
+    path = ${ftp_Path}
+[EndIf]
+
+[If Not,FromVariable=have_file]
+1
+  [If FromVariable=ftp]
+  0
+    [Error]
+    Need to fetch ${filesystem}:${new_file}.bin
+  [Else]
+    [Commands Single]
+    copy ftp://${ftp_User}:${ftp_Password}@${ftp_Server}${ftp_Path}${new_file}.bin ${filesystem}:${new_file}.bin
+    # Press enter 3 times to confirm user/pass/path
+    ${}
+    ${}
+    ${}
+  [EndIf]
+[EndIf]
+
+[If Not,FromVariable=verify]
+0
+
+  # Verify image
+  [Commands DefineVariable=verify_result,RepeatMax=10,RepeatReplace=.]
+  verify ${filesystem}:${new_file}.bin
+
+  # Get last non-empty line from verification result
+  [If Regex,Substring,FromVariable=verify_result]
+  (?<last_line>.+)\n*\Z
+    [Assign]
+    verify_result=${last_line}
+  [Else]
+    [Error]
+    Could not parse verify result ${verify_result}
+  [EndIf]
+
+  # If the verify failed we will bail out
+  [If Regex,Substring,FromVariable=verify_result, Not]
+  signature successfully verified
+    [Error]
+    Verify failure: ${verify_result}
+  [EndIf]
+[EndIf]

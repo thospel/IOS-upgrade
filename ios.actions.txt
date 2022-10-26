@@ -1,0 +1,176 @@
+# Determine target IOS
+
+[Define]
+debug=${caller.debug}
+image=
+new_file=
+have_file=
+device_name = ${global.device_name}
+
+# Load IOS upgrade table
+[Define Variable=ios_table,Single,BodyFromFile=cisco_ios.table.txt]
+
+# Run show version, filter and store result in variable 'version'
+# version = System image file is "bootflash:asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext."
+[Commands DefineVariable=version]
+show version | include ystem image file
+
+# Extract the actual system image name into variable image. So after this:
+#    image = bootflash:asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext.
+[If Regex=IgnoreCase, FromVariable=version]
+System image file is "(?<result>.*)"
+  [Assign]
+  image = ${result}
+[Else]
+  [Error]
+  'show version' output does not contain 'System image file is "XXXX"'
+[EndIf]
+
+[If Not,FromVariable=debug]
+0
+  # Fake image on device named 'shell-test-cisco' for development
+  [If FromVariable=device_name]
+  shell-test-cisco
+    [Assign]
+    image = flash:c3900-universalk9-mz.SPA.156-3.M8.bin
+  [EndIf]
+
+  [Print]
+  image = ${image}
+[EndIf]
+
+# Sometimes the image is something like bootflash:packages.conf
+# or even flash:cat3k_caa-universalk9.16.03.07.SPA.conf
+# For these we immediately exit with a dedicated error message
+[If Regex,FromVariable=image,Any]
+.*\.conf
+.*:unknown
+
+  [Error]
+  Parsing current system image "${image}" is not supported
+[EndIf]
+
+# Image names should end on .bin (possibly truncated)
+# Otherwise we don't really know if we have enough string for a proper parse
+[If Not,Regex,FromVariable=image]
+.*\.(?:b(?:in?)?)?
+  [Error]
+  Current system image '${image}' does not end with '.bin'
+[EndIf]
+
+# Parse something like
+#    bootflash:asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext.b
+# Into:
+#   filesystem = bootflash
+#   series = asr1000rp1
+#   features = adventerprisek9
+#   compressed =   (empty string, would be -mz for compressed images)
+#   old_release = 03.16.01a.S.155-3.S1a-ext
+#   old_path = asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext.b
+#   old_file = asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext
+# old_file is the part of old_path after the last / which happens with
+# directories
+# old_file is without .bin
+[If Regex=Verbose, FromVariable=image, Single]
+
+# Filesystem name can contain - (e.g. 'sup-bootdisk' on USHOUWTCMP650)
+(?<filesystem>[\w-]+) :
+(?<old_path>
+  # Directory part
+  (?:.*/)?
+  (?<old_file>
+    (?<series>\w+?)
+    (?:
+      # Suppport things like
+      #    cat9k_iosxe.16.12.02.SPA.bin
+      #    cat3k_caa-universalk9.SPA.03.02.00.SE.150-1.EX.bin
+      _ (?<software>\w+) |
+        (?<software>)
+    )
+    (?:
+      # Features is optional
+      - (?<features>\w+) |
+        (?<features>)
+    )
+    (?<compressed>-mz|)
+    \.
+    (?<old_release>.*)
+  )
+  \.
+  # The .bin part is sometimes truncated
+  (?:b(?:in?)?)?
+)
+
+[If Not,FromVariable=debug]
+0
+
+  [Print]
+  filesystem = ${filesystem}
+  series = ${series}
+  software = ${software}
+  features = ${features}
+  compressed = ${compressed}
+  release = ${old_release}
+  path = ${old_path}
+  file = ${old_file}
+[EndIf]
+
+# Determine if we need an upgrade and to what we need to upgrade
+[If Not, Literal=IgnoreCase, Substring, FromVariable=ios_table]
+${series}
+  [Error]
+  No entry for series '${series}' in IOS table
+[EndIf]
+
+[If Regex=IgnoreCase:Verbose, Single, FromVariable=ios_table]
+${series}				# Check for IOS series
+(?:\n[^\S\n]+.*)*			# Skip lines starting with whitespace
+\n[^\S\n]+				# Start with whitespace
+image [^\S\n]* = [^\S\n]* (?<ios_image>.*\S)	# find image = value
+[^\S\n]*				# Ignore trailing whitespace
+  [Assign]
+  new_file = ${ios_image}
+[Else]
+  [Error]
+  No image entry for series '${series}' in IOS table
+[EndIf]
+
+[If Not,FromVariable=debug]
+0
+  [Print]
+  new_file = ${new_file}
+[EndIf]
+
+# Do we have the new image ?
+[Commands DefineVariable=file_check, IgnoreError]
+dir ${filesystem}:${new_file}.bin
+
+[If Regex,Substring,FromVariable=file_check]
+\  ${new_file}.bin$
+
+  [Assign]
+  have_file=1
+
+[ElseIf Regex,Substring,FromVariable=file_check]
+%Error .*
+
+  [Assign]
+  have_file=0
+
+[Else]
+  [Error]
+  Cannot parse output from dir ${filesystem}:${new_file}.bin
+  ${file_check}
+[EndIf]
+
+[If Not,FromVariable=debug]
+0
+  [Print]
+  have_file = ${have_file}
+[EndIf]
+
+[Return]
+filesystem   = ${filesystem}
+old_file     = ${old_file}
+new_file     = ${new_file}
+have_file    = ${have_file}

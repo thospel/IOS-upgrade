@@ -1,0 +1,65 @@
+#!/opt/Shell/tooling/device-apply/bin/device-apply -A
+
+# Reboot to new IOS
+
+[Define]
+debug=1
+verify=1
+
+[Include File=ios.actions.txt]
+argument: debug
+
+define: old_file
+define: new_file
+define: have_file
+define: filesystem
+
+# Is an upgrade needed ?
+[If FromVariable=old_file]
+${new_file}
+
+  [Error]
+  Already running ${new_file}.bin
+
+[EndIf]
+
+[If Not,FromVariable=have_file]
+1
+
+  [Error]
+  File ${new_file}.bin is not in flash. Please run the pre upgrade script first
+[EndIf]
+
+[If Not,FromVariable=verify]
+0
+
+  # Verify image
+  [Commands DefineVariable=verify_result,RepeatMax=10,RepeatReplace=.]
+  verify ${filesystem}:${new_file}.bin
+
+  # Get last non-empty line from verification result
+  [If Regex,Substring,FromVariable=verify_result]
+  (?<last_line>.+)\n*\Z
+    [Assign]
+    verify_result=${last_line}
+  [Else]
+    [Error]
+    Could not parse verify result ${verify_result}
+  [EndIf]
+
+  # If the verify failed we will bail out
+  [If Regex,Substring,FromVariable=verify_result, Not]
+  signature successfully verified
+    [Error]
+    Verify failure: ${verify_result}
+  [EndIf]
+[EndIf]
+
+[Configure]
+boot system ${filesystem}:${new_file}.bin
+
+[Apply]
+
+[Commands Single=True, Disconnect=True]
+reload /noverify
+${}
