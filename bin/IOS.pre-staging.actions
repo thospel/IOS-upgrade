@@ -1,4 +1,5 @@
 #!/opt/Shell/tooling/device-apply/bin/device-apply -A
+
 # Upload a new image
 
 [Define]
@@ -7,7 +8,7 @@ ftp=1
 verify=1
 device_name = ${global.device_name}
 
-[Include File=ios.actions.txt]
+[Include File=../etc/IOS-upgrade/IOS.actions.txt]
 argument: debug
 
 define: filesystem

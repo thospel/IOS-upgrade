@@ -8,7 +8,7 @@ have_file=
 device_name = ${global.device_name}
 
 # Load IOS upgrade table
-[Define Variable=ios_table,Single,BodyFromFile=cisco_ios.table.txt]
+[Define Variable=ios_table,Single,BodyFromFile=$CURRENT_DIR/cisco_ios.table.txt]
 
 # Run show version, filter and store result in variable 'version'
 # version = System image file is "bootflash:asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext."
