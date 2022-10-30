@@ -1,0 +1,29 @@
+#!/opt/Shell/tooling/device-apply/bin/device-apply -A
+
+# Check for new IOS
+
+[Define]
+debug=1
+
+[Include File=IOS.actions.txt]
+argument: debug
+
+define: old_file
+define: new_file
+define: have_file
+
+# Is the upgrade done ?
+[If Not, FromVariable=old_file]
+${new_file}
+
+  [Error]
+  Not running ${new_file}.bin (instead running ${old_file})
+
+[EndIf]
+
+[If Not,FromVariable=have_file]
+1
+
+  [Error]
+  Running ${new_file}.bin but the file is not in flash.
+[EndIf]

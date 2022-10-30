@@ -1,0 +1,18 @@
+#!/opt/Shell/tooling/device-apply/bin/device-apply -A
+
+# Fetch image and Reboot to new IOS
+
+[Define]
+verify=1
+
+[Include File=IOS-upgrade.pre.actions.txt]
+define: filesystem
+define: old_file
+define: new_file
+
+[Include File=IOS-upgrade.reboot.actions.txt]
+argument: filesystem
+argument: old_file
+argument: old_verify=${verify}
+argument: new_file
+argument: new_verify=0

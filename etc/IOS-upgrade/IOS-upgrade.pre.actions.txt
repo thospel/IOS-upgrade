@@ -8,15 +8,16 @@ ftp=1
 verify=1
 device_name = ${global.device_name}
 
-[Include File=../etc/IOS-upgrade/IOS.actions.txt]
+[Include File=IOS.actions.txt]
 argument: debug
 
 define: filesystem
+define: old_file
 define: new_file
 define: have_file
 
 # Load FTP credentials
-[Define BodyFromFile=~/shell-lab.ftp.gpg, Secret=False, Prefix=ftp_]
+[Define BodyFromFile=$CURRENT_DIR/jumpserver.ftp.gpg, Secret=False, Prefix=ftp_]
 
 # Hide FTP password in logs
 [Secret]
@@ -54,30 +55,20 @@ ${ftp_Password}
     ${}
     ${}
     ${}
+    ${}
   [EndIf]
 [EndIf]
 
 [If Not,FromVariable=verify]
 0
-
-  # Verify image
-  [Commands DefineVariable=verify_result,RepeatMax=10,RepeatReplace=.]
-  verify ${filesystem}:${new_file}.bin
-
-  # Get last non-empty line from verification result
-  [If Regex,Substring,FromVariable=verify_result]
-  (?<last_line>.+)\n*\Z
-    [Assign]
-    verify_result=${last_line}
-  [Else]
-    [Error]
-    Could not parse verify result ${verify_result}
-  [EndIf]
-
-  # If the verify failed we will bail out
-  [If Regex,Substring,FromVariable=verify_result, Not]
-  signature successfully verified
-    [Error]
-    Verify failure: ${verify_result}
-  [EndIf]
+    # Verify image
+    [Include File=IOS-upgrade.verify.actions.txt]
+    argument: file    = ${filesystem}:${new_file}.bin
+    argument: context = Verify failure
 [EndIf]
+
+[Return]
+filesystem   = ${filesystem}
+old_file     = ${old_file}
+new_file     = ${new_file}
+have_file    = ${have_file}

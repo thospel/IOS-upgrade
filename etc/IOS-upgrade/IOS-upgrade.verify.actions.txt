@@ -1,0 +1,19 @@
+[Commands DefineVariable=verify_result,RepeatMax=10,RepeatReplace=.]
+verify ${caller.file}
+
+# Get last non-empty line from verification result
+[If Regex,Substring,FromVariable=verify_result]
+(?<last_line>.+)\n*\Z
+  [Assign]
+  verify_result=${last_line}
+[Else]
+  [Error]
+  Could not parse verify result ${verify_result}
+[EndIf]
+
+# If the verify failed we will bail out
+[If Regex,Substring,FromVariable=verify_result, Not]
+signature successfully verified
+  [Error]
+  ${caller.context}: ${verify_result}
+[EndIf]

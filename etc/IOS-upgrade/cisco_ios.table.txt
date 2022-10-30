@@ -1,0 +1,13 @@
+asr1000rp1
+  image = asr1000rp1-adventerprisek9.03.16.10.S.155-3.S10-ext
+c1900
+  image = c1900-universalk9-mz.SPA.157-3.M8
+  # image = C1900_2900_RM2.srec.SPA.150-1r.M16
+c3900
+  image = c3900-universalk9-mz.SPA.157-3.M8
+asr1002x
+  image = asr1002x-universalk9.17.06.03a.SPA
+  # image = asr1002x-universalk9.17.03.05.SPA
+  # image = asr1002x-universalk9.17.03.05.SPA_BAD
+isr4300
+  image = isr4300-universalk9.17.06.03a.SPA

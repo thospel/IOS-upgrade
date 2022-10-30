@@ -1,0 +1,25 @@
+#!/opt/Shell/tooling/device-apply/bin/python3
+from pathlib import Path
+import sys
+import os
+
+FILE = Path(__file__).resolve()
+CONFIG_DIR  = FILE.parents[1] / "etc" / "IOS-upgrade"
+DEVICE_APPLY = "/opt/Shell/tooling/device-apply/bin/device-apply"
+# DEVICE_APPLY = "device-apply"
+PACKAGE_VERSION = "1.0"
+
+if len(sys.argv) > 1:
+    if sys.argv[1] in ("--help", "-h"):
+        os.execvp(DEVICE_APPLY,
+                  [DEVICE_APPLY, "--help"])
+    if sys.argv[1] == "--version":
+        print(PACKAGE_VERSION)
+        sys.exit(0)
+
+if __name__=='__main__':
+    os.execvp(DEVICE_APPLY,
+              [DEVICE_APPLY,
+               "-A", str(CONFIG_DIR / ("%s.actions.txt" % FILE.name)),
+               "--version-min", "1.4.70",
+               *sys.argv[1:]])

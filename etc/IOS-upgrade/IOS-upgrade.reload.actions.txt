@@ -1,0 +1,38 @@
+#!/opt/Shell/tooling/device-apply/bin/device-apply -A
+
+# Reboot to new IOS
+
+[Define]
+debug=1
+verify=1
+
+[Include File=IOS.actions.txt]
+argument: debug
+
+define: old_file
+define: new_file
+define: have_file
+define: filesystem
+
+# Is an upgrade needed ?
+[If FromVariable=old_file]
+${new_file}
+
+  [Error]
+  Already running ${new_file}.bin
+
+[EndIf]
+
+[If Not,FromVariable=have_file]
+1
+
+  [Error]
+  File ${new_file}.bin is not in flash. Please run the pre upgrade script first
+[EndIf]
+
+[Include File=IOS-upgrade.reboot.actions.txt]
+argument: filesystem
+argument: old_file
+argument: old_verify=${verify}
+argument: new_file
+argument: new_verify=${verify}

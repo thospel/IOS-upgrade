@@ -1,0 +1,37 @@
+[Define]
+old_verify=${caller.old_verify}
+new_verify=${caller.new_verify}
+
+[If Not,FromVariable=old_verify]
+0
+    # Also verify the old image since we might want to roll back
+    [Include File=IOS-upgrade.verify.actions.txt]
+    argument: file    = ${caller.filesystem}:${caller.old_file}.bin
+    argument: context = Verify failure for old image
+[EndIf]
+
+[If Not,FromVariable=new_verify]
+0
+    # Verify the new image
+    [Include File=IOS-upgrade.verify.actions.txt]
+    argument: file    = ${caller.filesystem}:${caller.new_file}.bin
+    argument: context = Verify failure for new image
+[EndIf]
+
+[Commands Single=True]
+copy run ${caller.filesystem}:config_${global.job_utc:%Y-%m-%dT%H:%M:%SZ}
+${}
+${}
+
+[Configure]
+no boot system
+boot system ${caller.filesystem}:${caller.new_file}.bin
+boot system ${caller.filesystem}
+
+[Apply]
+
+# pre.actions.txt already do a verify
+[Commands Single=True, Disconnect=True]
+reload /noverify
+${}
+${}
