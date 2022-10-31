@@ -3,14 +3,11 @@
 # Upload a new image
 
 [Define]
-debug=1
 ftp=1
-verify=1
-device_name = ${global.device_name}
 
 [Include File=IOS.actions.txt]
-argument: debug
-
+define: debug
+define: verify
 define: filesystem
 define: old_file
 define: new_file
@@ -47,10 +44,10 @@ ${ftp_Password}
   [If FromVariable=ftp]
   0
     [Error]
-    Need to fetch ${filesystem}:${new_file}.bin
+    Need to fetch ${filesystem}:${new_file}
   [Else]
     [Commands Single]
-    copy ftp://${ftp_User}:${ftp_Password}@${ftp_Server}${ftp_Path}${new_file}.bin ${filesystem}:${new_file}.bin
+    copy ftp://${ftp_User}:${ftp_Password}@${ftp_Server}${ftp_Path}${new_file} ${filesystem}:${new_file}
     # Press enter 3 times to confirm user/pass/path
     ${}
     ${}
@@ -63,11 +60,13 @@ ${ftp_Password}
 0
     # Verify image
     [Include File=verify.actions.txt]
-    argument: file    = ${filesystem}:${new_file}.bin
+    argument: file    = ${filesystem}:${new_file}
     argument: context = Verify failure
 [EndIf]
 
 [Return]
+verify       = ${verify}
+debug        = ${debug}
 filesystem   = ${filesystem}
 old_file     = ${old_file}
 new_file     = ${new_file}

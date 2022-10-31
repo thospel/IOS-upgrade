@@ -1,0 +1,158 @@
+# Load IOS table
+
+# Load IOS upgrade table
+[Define Variable=ios_table,Single,BodyFromFile=$CURRENT_DIR/cisco_ios.table.txt]
+
+[Define]
+top_verify = 1
+top_debug  = 0
+matches =
+
+verify=
+debug=
+image=
+md5=
+
+# Determine if we need an upgrade and to what we need to upgrade
+[While Regex=IgnoreCase:Verbose,FromVariable=ios_table,Single]
+(?<comment>\#.*)				|	# Comment
+verify [^\S\n]* = [^\S\n]* (?<set_verify>[01])	|	# variable verify
+debug  [^\S\n]* = [^\S\n]* (?<set_debug>[01])	|	# variable debug
+series [^\S\n]*  : [^\S\n]* (?<model>\S+)
+   (?<body>
+     (\n
+        (?:
+            [^\S\n] .* |				# indented line
+            [^\S\n]* (?: \#.* | )			# empty line/comment
+        )
+     )*
+   )						|	# model/body
+(?<other>.+)
+
+    # Set empty values if there is no match
+    [Assign]
+    set_verify = ${set_verify|}
+    set_debug  = ${set_debug|}
+    model      = ${model|}
+    other      = ${other|}
+    comment    = ${comment|}
+
+    [If Not,FromVariable=set_verify]
+    ${}
+        [Assign]
+        top_verify = ${set_verify}
+
+    [ElseIf Not,FromVariable=set_debug]
+    ${}
+        [Assign]
+        top_debug = ${set_debug}
+
+    [ElseIf Not,FromVariable=other]
+    ${}
+        [Error]
+        IOS file: Cannot parse '${other}'
+    [ElseIf Not,FromVariable=model]
+    ${}
+        # Make initial \n into a comment
+        [Assign]
+        body = #${body}
+
+        [Define]
+        local_verify = ${top_verify}
+        local_debug  = ${top_debug}
+        local_image  =
+        local_md5    =
+
+        [While Regex=IgnoreCase:Verbose,FromVariable=body,Single]
+        [^\S\n]* (?:
+          (?<comment0>\#.*)				  | # Comment
+          verify [^\S\n]* = [^\S\n]* (?<set_verify0>[01]) | # variable verify
+          debug  [^\S\n]* = [^\S\n]* (?<set_debug0>[01])  | # variable debug
+          image  [^\S\n]* = [^\S\n]* (?<image0>\S+)	  | # variable image
+          md5    [^\S\n]* = [^\S\n]* (?<md50>[0-9a-f]+)	    # variable md5
+        ) |
+        (?<other0>.+)
+
+            # Set empty values if there is no match
+            [Assign]
+            set_verify0 = ${set_verify0|}
+            set_debug0  = ${set_debug0|}
+            md50        = ${md50|}
+            image0      = ${image0|}
+            other0      = ${other0|}
+            comment0    = ${comment0|}
+
+            [If Not,FromVariable=set_verify0]
+            ${}
+                [Assign]
+                local_verify = ${set_verify0}
+
+            [ElseIf Not,FromVariable=set_debug0]
+            ${}
+                [Assign]
+                local_debug = ${set_debug0}
+
+            [ElseIf Not,FromVariable=md50]
+            ${}
+                [Assign]
+                local_md5 = ${md50}
+
+            [ElseIf Not,FromVariable=image0]
+            ${}
+                [Assign]
+                local_image = ${image0}
+
+            [ElseIf Not,FromVariable=other0]
+            ${}
+                [Error]
+                IOS file: Cannot parse '${other0}'
+            [ElseIf FromVariable=comment0]
+            ${}
+                [Error]
+                IOS file: Internal body parse error
+            [EndIf]
+        [EndWhile]
+
+        [If Literal=IgnoreCase,FromVariable=model]
+        ${caller.series}
+            [Assign]
+            verify = ${local_verify}
+            debug  = ${local_debug}
+            image  = ${local_image}
+            md5    = ${local_md5}
+
+            matches = ${matches}=
+        [EndIf]
+
+    [ElseIf FromVariable=comment]
+    ${}
+        [Error]
+        IOS file: Internal parse error
+    [EndIf]
+
+[EndWhile]
+
+[Print]
+verify = ${verify}
+debug  = ${debug}
+image  = ${image}
+md5    = ${md5}
+
+[If FromVariable=matches]
+${}
+
+    [Error]
+    No matching entry for series '${caller.series}' in IOS table
+
+[ElseIf FromVariable=matches,Regex]
+==+
+
+    [Error]
+    Multiple matching entries for series '${caller.series}' in IOS table
+[EndIf]
+
+[Return]
+verify = ${verify}
+debug  = ${debug}
+image  = ${image}
+md5    = ${md5}

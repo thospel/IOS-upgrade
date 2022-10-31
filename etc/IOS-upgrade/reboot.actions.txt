@@ -1,12 +1,30 @@
 [Define]
-old_verify=${caller.old_verify}
-new_verify=${caller.new_verify}
+old_verify = ${caller.old_verify}
+new_verify = ${caller.new_verify}
+new_file   = ${caller.new_file}
+have_file  = ${caller.have_file}
+
+# Is an upgrade needed ?
+[If Regex, FromVariable=new_file]
+${caller.old_file}(\.bin|bin|in|n|)
+
+  [Error]
+  Already running ${new_file}
+
+[EndIf]
+
+[If Not,FromVariable=have_file]
+1
+
+  [Error]
+  File ${new_file} is not in flash. Please run the pre upgrade script first
+[EndIf]
 
 [If Not,FromVariable=old_verify]
 0
     # Also verify the old image since we might want to roll back
     [Include File=verify.actions.txt]
-    argument: file    = ${caller.filesystem}:${caller.old_file}.bin
+    argument: file    = ${caller.filesystem}:${caller.old_file}
     argument: context = Verify failure for old image
 [EndIf]
 
@@ -14,7 +32,7 @@ new_verify=${caller.new_verify}
 0
     # Verify the new image
     [Include File=verify.actions.txt]
-    argument: file    = ${caller.filesystem}:${caller.new_file}.bin
+    argument: file    = ${caller.filesystem}:${new_file}
     argument: context = Verify failure for new image
 [EndIf]
 
@@ -25,7 +43,7 @@ ${}
 
 [Configure]
 no boot system
-boot system ${caller.filesystem}:${caller.new_file}.bin
+boot system ${caller.filesystem}:${new_file}
 boot system ${caller.filesystem}
 
 [Apply]

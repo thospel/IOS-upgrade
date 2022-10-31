@@ -1,14 +1,10 @@
 # Determine target IOS
 
 [Define]
-debug=${caller.debug}
+fake = shell-test-cisco
 image=
-new_file=
 have_file=
 device_name = ${global.device_name}
-
-# Load IOS upgrade table
-[Define Variable=ios_table,Single,BodyFromFile=$CURRENT_DIR/cisco_ios.table.txt]
 
 # Run show version, filter and store result in variable 'version'
 # version = System image file is "bootflash:asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext."
@@ -19,24 +15,18 @@ show version | include ystem image file
 #    image = bootflash:asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext.
 [If Regex=IgnoreCase, FromVariable=version]
 System image file is "(?<result>.*)"
-  [Assign]
-  image = ${result}
+    [Assign]
+    image = ${result}
 [Else]
-  [Error]
-  'show version' output does not contain 'System image file is "XXXX"'
+    [Error]
+    'show version' output does not contain 'System image file is "XXXX"'
 [EndIf]
 
-[If Not,FromVariable=debug]
-0
-  # Fake image on device named 'shell-test-cisco' for development
-  [If FromVariable=device_name]
-  shell-test-cisco
+# Fake image on device named 'shell-test-cisco' for development
+[If FromVariable=device_name]
+shell-test-cisco
     [Assign]
     image = flash:c3900-universalk9-mz.SPA.156-3.M8.bin
-  [EndIf]
-
-  [Print]
-  image = ${image}
 [EndIf]
 
 # Sometimes the image is something like bootflash:packages.conf
@@ -76,101 +66,85 @@ System image file is "(?<result>.*)"
 # Filesystem name can contain - (e.g. 'sup-bootdisk' on USHOUWTCMP650)
 (?<filesystem>[\w-]+) :
 (?<old_path>
-  # Directory part
-  (?:.*/)?
-  (?<old_file>
-    (?<series>\w+?)
-    (?:
-      # Suppport things like
-      #    cat9k_iosxe.16.12.02.SPA.bin
-      #    cat3k_caa-universalk9.SPA.03.02.00.SE.150-1.EX.bin
-      _ (?<software>\w+) |
-        (?<software>)
+    # Directory part
+    (?:.*/)?
+    (?<old_file>
+        (?<series>\w+?)
+        (?:
+            # Suppport things like
+            #    cat9k_iosxe.16.12.02.SPA.bin
+            #    cat3k_caa-universalk9.SPA.03.02.00.SE.150-1.EX.bin
+            _ (?<software>\w+) |
+              (?<software>)
+        )
+        (?:
+            # Features is optional
+            - (?<features>\w+) |
+              (?<features>)
+        )
+        (?<compressed>-mz|)
+        \.
+        (?<old_release>.*)
     )
-    (?:
-      # Features is optional
-      - (?<features>\w+) |
-        (?<features>)
-    )
-    (?<compressed>-mz|)
     \.
-    (?<old_release>.*)
-  )
-  \.
-  # The .bin part is sometimes truncated
-  (?:b(?:in?)?)?
+    # The .bin part is sometimes truncated
+    (?:b(?:in?)?)?
 )
 
-[If Not,FromVariable=debug]
-0
+[Include File=IOS_table.actions.txt]
+argument: series
 
-  [Print]
-  filesystem = ${filesystem}
-  series = ${series}
-  software = ${software}
-  features = ${features}
-  compressed = ${compressed}
-  release = ${old_release}
-  path = ${old_path}
-  file = ${old_file}
-[EndIf]
-
-# Determine if we need an upgrade and to what we need to upgrade
-[If Not, Literal=IgnoreCase, Substring, FromVariable=ios_table]
-${series}
-  [Error]
-  No entry for series '${series}' in IOS table
-[EndIf]
-
-[If Regex=IgnoreCase:Verbose, Single, FromVariable=ios_table]
-${series}				# Check for IOS series
-(?:\n[^\S\n]+.*)*			# Skip lines starting with whitespace
-\n[^\S\n]+				# Start with whitespace
-image [^\S\n]* = [^\S\n]* (?<ios_image>.*\S)	# find image = value
-[^\S\n]*				# Ignore trailing whitespace
-  [Assign]
-  new_file = ${ios_image}
-[Else]
-  [Error]
-  No image entry for series '${series}' in IOS table
-[EndIf]
+define: new_file = ${return.image}
+define: new_md5  = ${return.md5}
+define: debug
+define: verify
 
 [If Not,FromVariable=debug]
 0
-  [Print]
-  new_file = ${new_file}
+    [Print]
+    filesystem = ${filesystem}
+    series = ${series}
+    software = ${software}
+    features = ${features}
+    compressed = ${compressed}
+    release  = ${old_release}
+    old_path = ${old_path}
+    old_file = ${old_file}
+    new_file = ${new_file}
 [EndIf]
 
 # Do we have the new image ?
 [Commands DefineVariable=file_check, IgnoreError]
-dir ${filesystem}:${new_file}.bin
+dir ${filesystem}:${new_file}
 
 [If Regex,Substring,FromVariable=file_check]
-\  ${new_file}.bin$
+\  ${new_file}$
 
-  [Assign]
-  have_file=1
+    [Assign]
+    have_file=1
 
 [ElseIf Regex,Substring,FromVariable=file_check]
 %Error .*
 
-  [Assign]
-  have_file=0
+    [Assign]
+    have_file=0
 
 [Else]
-  [Error]
-  Cannot parse output from dir ${filesystem}:${new_file}.bin
-  ${file_check}
+    [Error]
+    Cannot parse output from dir ${filesystem}:${new_file}
+    ${file_check}
 [EndIf]
 
 [If Not,FromVariable=debug]
 0
-  [Print]
-  have_file = ${have_file}
+    [Print]
+    have_file = ${have_file}
 [EndIf]
 
 [Return]
+debug        = ${debug}
+verify       = ${verify}
 filesystem   = ${filesystem}
-old_file     = ${old_file}
+old_file     = ${old_path}
 new_file     = ${new_file}
 have_file    = ${have_file}

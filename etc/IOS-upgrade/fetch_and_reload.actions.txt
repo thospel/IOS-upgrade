@@ -2,15 +2,15 @@
 
 # Fetch image and Reboot to new IOS
 
-[Define]
-verify=1
-
 [Include File=pre.actions.txt]
+define: verify
 define: filesystem
 define: old_file
 define: new_file
+define: have_file
 
 [Include File=reboot.actions.txt]
+argument: have_file = 1
 argument: filesystem
 argument: old_file
 argument: old_verify=${verify}

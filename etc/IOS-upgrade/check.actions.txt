@@ -2,22 +2,19 @@
 
 # Check for new IOS
 
-[Define]
-debug=1
-
 [Include File=IOS.actions.txt]
-argument: debug
-
 define: old_file
 define: new_file
 define: have_file
+define: debug
+define: verify
 
 # Is the upgrade done ?
-[If Not, FromVariable=old_file]
-${new_file}
+[If Not, Regex, FromVariable=new_file]
+${old_file}(\.bin|bin|in|n|)
 
   [Error]
-  Not running ${new_file}.bin (instead running ${old_file})
+  Not running ${new_file} (instead running ${old_file})
 
 [EndIf]
 
@@ -25,5 +22,5 @@ ${new_file}
 1
 
   [Error]
-  Running ${new_file}.bin but the file is not in flash.
+  Running ${new_file} but the file is not in flash.
 [EndIf]
