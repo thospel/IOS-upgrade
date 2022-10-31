@@ -62,7 +62,7 @@ ${ftp_Password}
 [If Not,FromVariable=verify]
 0
     # Verify image
-    [Include File=IOS-upgrade.verify.actions.txt]
+    [Include File=verify.actions.txt]
     argument: file    = ${filesystem}:${new_file}.bin
     argument: context = Verify failure
 [EndIf]

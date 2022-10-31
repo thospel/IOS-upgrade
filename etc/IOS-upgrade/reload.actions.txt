@@ -30,7 +30,7 @@ ${new_file}
   File ${new_file}.bin is not in flash. Please run the pre upgrade script first
 [EndIf]
 
-[Include File=IOS-upgrade.reboot.actions.txt]
+[Include File=reboot.actions.txt]
 argument: filesystem
 argument: old_file
 argument: old_verify=${verify}

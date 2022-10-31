@@ -5,12 +5,12 @@
 [Define]
 verify=1
 
-[Include File=IOS-upgrade.pre.actions.txt]
+[Include File=pre.actions.txt]
 define: filesystem
 define: old_file
 define: new_file
 
-[Include File=IOS-upgrade.reboot.actions.txt]
+[Include File=reboot.actions.txt]
 argument: filesystem
 argument: old_file
 argument: old_verify=${verify}
