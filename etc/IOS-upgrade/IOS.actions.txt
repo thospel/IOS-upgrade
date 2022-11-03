@@ -1,9 +1,13 @@
-# Determine target IOS
+# Determizne target IOS
 
 [Define]
 fake = shell-test-cisco
 image=
-have_file=
+have_image_file=
+have_rom_file=
+valid_image=
+old_rom_id=
+valid_rom=
 device_name = ${global.device_name}
 
 # Run show version, filter and store result in variable 'version'
@@ -61,7 +65,7 @@ shell-test-cisco
 # old_file is the part of old_path after the last / which happens with
 # directories
 # old_file is without .bin
-[If Regex=Verbose, FromVariable=image, Single]
+[If Not,Regex=Verbose, FromVariable=image, Single]
 
 # Filesystem name can contain - (e.g. 'sup-bootdisk' on USHOUWTCMP650)
 (?<filesystem>[\w-]+) :
@@ -91,60 +95,143 @@ shell-test-cisco
     (?:b(?:in?)?)?
 )
 
-[Include File=IOS_table.actions.txt]
-argument: series
-
-define: new_file = ${return.image}
-define: new_md5  = ${return.md5}
-define: debug
-define: verify
-
-[If Not,FromVariable=debug]
-0
-    [Print]
-    filesystem = ${filesystem}
-    series = ${series}
-    software = ${software}
-    features = ${features}
-    compressed = ${compressed}
-    release  = ${old_release}
-    old_path = ${old_path}
-    old_file = ${old_file}
-    new_file = ${new_file}
-[EndIf]
-
-# Do we have the new image ?
-[Commands DefineVariable=file_check, IgnoreError]
-dir ${filesystem}:${new_file}
-
-[If Regex,Substring,FromVariable=file_check]
-\  ${new_file}$
-
-    [Assign]
-    have_file=1
-
-[ElseIf Regex,Substring,FromVariable=file_check]
-%Error .*
-
-    [Assign]
-    have_file=0
-
-[Else]
     [Error]
-    Cannot parse output from dir ${filesystem}:${new_file}
-    ${file_check}
-[EndIf]
+    Could not parse image ${image}
+[Else]
+    [Include File=IOS.table.actions.txt]
+    argument: series
 
-[If Not,FromVariable=debug]
-0
-    [Print]
-    have_file = ${have_file}
-[EndIf]
+    define: new_file = ${return.image}
+    define: new_md5  = ${return.md5}
+    define: verify
+    define: ftp
+    define: debug
+    define: rom_file
+    define: rom_id
+    define: rom_md5
 
-[Return]
-debug        = ${debug}
-verify       = ${verify}
-filesystem   = ${filesystem}
-old_file     = ${old_path}
-new_file     = ${new_file}
-have_file    = ${have_file}
+    [If Not,FromVariable=debug]
+    0
+        [Print]
+        filesystem = ${filesystem}
+        series = ${series}
+        software = ${software}
+        features = ${features}
+        compressed = ${compressed}
+        release  = ${old_release}
+        old_path = ${old_path}
+        old_file = ${old_file}
+        new_file = ${new_file}
+        rom_file = ${rom_file}
+        rom_id   = ${rom_id}
+        rom_md5  = ${rom_md5}
+    [EndIf]
+
+    [Scope]
+        # Do we have the new image ?
+        [Commands DefineVariable=file_check, IgnoreError]
+        dir ${filesystem}:${new_file}
+
+        [If Regex,Substring,FromVariable=file_check]
+        \  ${new_file}$
+
+            [Assign]
+            have_image_file=1
+
+        [ElseIf Regex,Substring,FromVariable=file_check]
+        %Error .*
+
+            [Assign]
+            have_image_file=0
+
+        [Else]
+            [Error]
+            Cannot parse output from dir ${filesystem}:${new_file}
+            ${file_check}
+        [EndIf]
+
+        # Is an upgrade needed ?
+        [If Regex, FromVariable=new_file]
+        ${old_file}(\.bin|bin|in|n|)
+            [Assign]
+            valid_image=1
+        [Else]
+            [Assign]
+            valid_image=0
+        [EndIf]
+    [EndScope]
+
+    # Do we want a specific ROM ?
+    [If FromVariable=rom_file]
+    ${}
+        [Assign]
+        have_rom_file=1
+        valid_rom=1
+    [Else]
+        # Do we have the new ROM ?
+        [Commands DefineVariable=file_check, IgnoreError]
+        dir ${filesystem}:${rom_file}
+
+        [If Regex,Substring,FromVariable=file_check]
+        \  ${rom_file}$
+
+            [Assign]
+            have_rom_file=1
+
+        [ElseIf Regex,Substring,FromVariable=file_check]
+        %Error .*
+
+            [Assign]
+            have_rom_file=0
+
+        [Else]
+            [Error]
+            Cannot parse output from dir ${filesystem}:${rom_file}
+            ${file_check}
+        [EndIf]
+
+        [Include File=IOS.platform.actions.txt]
+        define: old_rom_id0 = ${return.firmware}
+
+        [Assign]
+        old_rom_id = ${old_rom_id0}
+
+        [If FromVariable=rom_id]
+        ${old_rom_id}
+            [Assign]
+            valid_rom=1
+        [Else]
+            [Assign]
+            valid_rom=0
+        [EndIf]
+    [EndIf]
+
+    [If Not,FromVariable=debug]
+    0
+        [Print]
+        have_image_file = ${have_image_file}
+        valid_image     = ${valid_image}
+        have_rom_file   = ${have_rom_file}
+        old_rom_id      = ${old_rom_id}
+        valid_rom       = ${valid_rom}
+    [EndIf]
+
+    [Return]
+    debug        = ${debug}
+    verify       = ${verify}
+    ftp          = ${ftp}
+    filesystem   = ${filesystem}
+
+    old_file     = ${old_path}
+    new_file     = ${new_file}
+    new_md5      = ${new_md5}
+    have_image_file = ${have_image_file}
+    valid_image  = ${valid_image}
+
+    old_rom_id   = ${old_rom_id}
+    rom_file     = ${rom_file}
+    rom_id       = ${rom_id}
+    rom_md5      = ${rom_md5}
+    have_rom_file = ${have_rom_file}
+    valid_rom    = ${valid_rom}
+[EndIf]

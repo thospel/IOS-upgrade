@@ -1,0 +1,65 @@
+[Commands DefineVariable=platform]
+show platform
+
+[Assign Single]
+platform = ${platform}
+${}
+
+[Define]
+firmwares= ${} ${}
+slots=
+
+[If Regex=IgnoreCase:Verbose,FromVariable=platform,Single]
+Slot \s+ CPLD \s+ Version \s+ Firmware \s+ Version \n
+-+ \s+ -+ \s+ -+ \n
+(?<platform_body>(?:.+\n)+)
+
+    [While Regex=Verbose,FromVariable=platform_body]
+    (?<slot>\w+) \s+ (?<clpd>\d+) \s+ (?<firmware>\S+) |
+    (?<other>.+)
+
+        [Assign]
+        other=${other|}
+
+        [If Not,FromVariable=other]
+        ${}
+            [Error]
+            Could not parse 'show platform' output line: '${other}'
+        [EndIf]
+        [If Not,FromVariable=firmwares,Substring]
+        ${} ${firmware} ${}
+            [Assign]
+            firmwares = ${firmwares}${firmware} ${}
+        [EndIf]
+        [Assign]
+        slots = ${slots} ${slot}
+    [Else]
+        [Error]
+        Could not parse 'show platform' body
+    [EndWhile]
+[Else]
+    [Error]
+    Could not parse 'show platform' output
+[EndIf]
+
+[If Regex,FromVariable=slots]
+${} (?<slots0>.+)
+    [Assign]
+    slots = ${slots0}
+[Else]
+    [Error]
+    Assertion: No slots
+[EndIf]
+
+[If Regex,FromVariable=firmwares]
+${} (?<firmwares0>\S+) ${}
+    [Assign]
+    firmwares = ${firmwares0}
+[Else]
+    [Error]
+    Inconsistent slot formwares:${firmwares}
+[EndIf]
+
+[Return]
+slots = ${slots}
+firmware = ${firmwares}

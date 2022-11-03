@@ -6,14 +6,30 @@
 define: debug
 define: verify
 define: filesystem
+
 define: old_file
 define: new_file
-define: have_file
+define: new_md5
+define: have_image_file
+define: valid_image
+
+define: rom_file
+define: rom_md5
+define: valid_rom
+define: have_rom_file
 
 [Include File=reboot.actions.txt]
-argument: have_file
-argument: filesystem
-argument: old_file
 argument: old_verify = ${verify}
-argument: new_file
 argument: new_verify = ${verify}
+argument: filesystem
+
+argument: old_file
+argument: new_file
+argument: new_md5
+argument: have_image_file
+argument: valid_image
+
+argument: rom_file
+argument: rom_md5
+argument: have_rom_file
+argument: valid_rom

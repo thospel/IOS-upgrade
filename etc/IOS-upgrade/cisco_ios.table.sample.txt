@@ -1,0 +1,35 @@
+Version = 1
+# verify=1
+# ftp = 1
+# debug = 0
+
+Series: asr1000rp1
+  Image = asr1000rp1-adventerprisek9.03.16.10.S.155-3.S10-ext.bin
+
+Series: c1900
+  Image = c1900-universalk9-mz.SPA.157-3.M8.bin
+  # Image = C1900_2900_RM2.srec.SPA.150-1r.M16.bin
+
+Series: c3900
+  image = c3900-universalk9-mz.SPA.157-3.M8.bin
+
+Series: asr1002x
+  Image = asr1002x-universalk9.17.06.03a.SPA.bin
+  Md5   = f9b96a023a4333d0faf4aaa8cfc87c9f
+  # image = asr1002x-universalk9.17.03.05.SPA.bin
+  # Md5   = c18f48531b0c20e752620f47961a4606
+
+  RomFile = asr1000-rommon.173-1r.SPA.pkg
+  RomMd5  = 99589534e8e6b32fe43584f03f4de40e
+  RomId = 17.3(1r)
+  # RomFile = asr1000-rommon.167_1r.pkg
+  # RomMd5  = 9779bc27e03f1a0aafbf842ad8d7e3a4
+  # RomId  = 16.7(1r)
+
+Series: isr4300
+  # Image = isr4300-universalk9.17.08.01a.SPA.bin
+  # Md5  = 8ebc7500174cafe04d30258f7d894c9c  
+  image = isr4300-universalk9.17.06.03a.SPA.bin
+  Md5   = 7da818b27590d818f7afea3098a92b52
+  # Image = isr4300-universalk9.16.06.01.SPA.bin
+  # Md5   = 93912fa05817a2c896deb1fafdc2e231

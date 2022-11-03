@@ -1,19 +1,59 @@
-[Commands DefineVariable=verify_result,RepeatMax=10,RepeatReplace=.]
-verify ${caller.file}
+[Define]
+file = ${caller.file}
+md5  = ${caller.md5}
 
-# Get last non-empty line from verification result
-[If Regex,Substring,FromVariable=verify_result]
-(?<last_line>.+)\n*\Z
-  [Assign]
-  verify_result=${last_line}
-[Else]
-  [Error]
-  Could not parse verify result ${verify_result}
+# Sanity check
+[If FromVariable=file]
+${}
+    [Error]
+    Assertion: Empty file name for verify
 [EndIf]
 
-# If the verify failed we will bail out
-[If Regex,Substring,FromVariable=verify_result, Not]
-signature successfully verified
-  [Error]
-  ${caller.context}: ${verify_result}
+[If FromVariable=md5]
+${}
+    [Commands DefineVariable=verify_result,RepeatMax=10,RepeatReplace=.]
+    verify ${file}
+
+    # Get last non-empty line from verification result
+    [If Regex,Substring,FromVariable=verify_result]
+    (?<last_line>.+)\n*\Z
+        [Assign]
+        verify_result=${last_line}
+    [Else]
+        [Error]
+        Could not parse verify result ${verify_result}
+    [EndIf]
+
+    # If the verify failed we will bail out
+    [If Regex,Substring,FromVariable=verify_result, Not]
+    signature successfully verified
+        [Error]
+        ${caller.context}: ${verify_result}
+    [EndIf]
+[Else]
+    [Commands DefineVariable=verify_result,RepeatMax=10,RepeatReplace=.]
+    verify /md5 ${file}
+
+    # Get last non-empty line from verification result
+    [If Regex,Substring,FromVariable=verify_result]
+    (?<last_line>.+)\n*\Z
+        [Assign]
+        verify_result=${last_line}
+    [Else]
+        [Error]
+        Could not parse verify result ${verify_result}
+    [EndIf]
+
+    # If the verify failed we will bail out
+    [If Regex,Substring,FromVariable=verify_result]
+    verify\s.*=\s*(?<got_md5>\S+)
+        [If Not,Literal=IgnoreCase,FromVariable=md5]
+        ${got_md5}
+            [Error]
+            ${caller.context}: md5(${file}) = ${got_md5}, expected ${md5}
+        [EndIf]
+    [Else]
+        [Error]
+        ${caller.context}: ${verify_result}
+    [EndIf]
 [EndIf]

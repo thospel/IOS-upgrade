@@ -5,22 +5,38 @@
 [Include File=IOS.actions.txt]
 define: old_file
 define: new_file
-define: have_file
+define: have_image_file
 define: debug
 define: verify
+define: valid_image
+define: rom_file
+define: rom_md5
+define: rom_id
+define: old_rom_id
+define: valid_rom
 
-# Is the upgrade done ?
-[If Not, Regex, FromVariable=new_file]
-${old_file}(\.bin|bin|in|n|)
+# Is the image upgrade done ?
+[If Not, FromVariable=valid_image]
+1
 
   [Error]
-  Not running ${new_file} (instead running ${old_file})
+  Not running IOS image ${new_file} (instead running ${old_file})
 
 [EndIf]
 
-[If Not,FromVariable=have_file]
+[If Not,FromVariable=have_image_file]
 1
 
   [Error]
   Running ${new_file} but the file is not in flash.
 [EndIf]
+
+# Is the ROM upgrade done ?
+[If Not, FromVariable=valid_rom]
+1
+
+  [Error]
+  Not running ROM ${rom_id} (instead running ${old_rom_id})
+
+[EndIf]
+
