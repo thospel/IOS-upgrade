@@ -2,7 +2,7 @@
 
 # Fetch image and Reboot to new IOS
 
-[Include File=pre.actions.txt]
+[Include File=prepare.actions.txt]
 define: verify
 define: filesystem
 

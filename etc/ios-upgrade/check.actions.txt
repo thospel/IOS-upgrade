@@ -39,4 +39,3 @@ define: valid_rom
   Not running ROM ${rom_id} (instead running ${old_rom_id})
 
 [EndIf]
-

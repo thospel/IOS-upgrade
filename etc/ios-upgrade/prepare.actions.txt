@@ -62,7 +62,7 @@ ${ftp_Password}
         ${}
       [EndIf]
     [EndIf]
-    
+
     [If Not,FromVariable=verify]
     0
         # Verify image
@@ -91,7 +91,7 @@ ${ftp_Password}
         ${}
       [EndIf]
     [EndIf]
-    
+
     [If Not,FromVariable=verify]
     0
         # Verify image

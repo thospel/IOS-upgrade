@@ -28,7 +28,7 @@ Series: asr1002x
 
 Series: isr4300
   # Image = isr4300-universalk9.17.08.01a.SPA.bin
-  # Md5  = 8ebc7500174cafe04d30258f7d894c9c  
+  # Md5  = 8ebc7500174cafe04d30258f7d894c9c
   image = isr4300-universalk9.17.06.03a.SPA.bin
   Md5   = 7da818b27590d818f7afea3098a92b52
   # Image = isr4300-universalk9.16.06.01.SPA.bin
