@@ -24,7 +24,7 @@ rom_id=
 rom_md5=
 
 # Determine if we need an upgrade and to what we need to upgrade
-[While Regex=IgnoreCase:Verbose,FromVariable=ios_table,Single]
+[While Regex,IgnoreCase,Verbose,FromVariable=ios_table,Single]
 (?<comment>\#.*)				|	# Comment
 (?<var_name>verify|ftp|debug) [^\S\n]* = [^\S\n]* (?<var_value>[01])	|	# boolean variable
 (?<var_name>version) [^\S\n]* = [^\S\n]* (?<var_value>\d+)	|	# numeric variable
@@ -48,15 +48,15 @@ series [^\S\n]*  : [^\S\n]* (?<model>\S+)
 
     [If Not,FromVariable=var_name]
     ${}
-        [If Literal=IgnoreCase,FromVariable=var_name]
+        [If IgnoreCase,FromVariable=var_name]
         verify
             [Assign]
             top_verify = ${var_value}
-        [ElseIf Literal=IgnoreCase,FromVariable=var_name]
+        [ElseIf IgnoreCase,FromVariable=var_name]
         ftp
             [Assign]
             top_ftp    = ${var_value}
-        [ElseIf Literal=IgnoreCase,FromVariable=var_name]
+        [ElseIf IgnoreCase,FromVariable=var_name]
         version
             [Assign]
             top_version    = ${var_value}
@@ -65,7 +65,7 @@ series [^\S\n]*  : [^\S\n]* (?<model>\S+)
                 [Error]
                 IOS file: Format version ${top_version}, expected ${parser_version}
             [EndIf]
-        [ElseIf Literal=IgnoreCase,FromVariable=var_name]
+        [ElseIf IgnoreCase,FromVariable=var_name]
         debug
             [Assign]
             top_debug    = ${var_value}
@@ -93,7 +93,7 @@ series [^\S\n]*  : [^\S\n]* (?<model>\S+)
         local_rom_id   =
         local_rom_md5  =
 
-        [While Regex=IgnoreCase:Verbose,FromVariable=body,Single]
+        [While Regex,IgnoreCase,Verbose,FromVariable=body,Single]
         [^\S\n]* (?:
           (?<comment0>\#.*)				  | # Comment
           (?<var_name0>verify|ftp|debug)    [^\S\n]* = [^\S\n]* (?<var_value0>[01])   | # boolean var
@@ -110,35 +110,35 @@ series [^\S\n]*  : [^\S\n]* (?<model>\S+)
 
             [If Not,FromVariable=var_name0]
             ${}
-                [If Literal=IgnoreCase,FromVariable=var_name0]
+                [If IgnoreCase,FromVariable=var_name0]
                 verify
                     [Assign]
                     local_verify = ${var_value0}
-                [ElseIf Literal=IgnoreCase,FromVariable=var_name0]
+                [ElseIf IgnoreCase,FromVariable=var_name0]
                 ftp
                     [Assign]
                     local_ftp = ${var_value0}
-                [ElseIf Literal=IgnoreCase,FromVariable=var_name0]
+                [ElseIf IgnoreCase,FromVariable=var_name0]
                 debug
                     [Assign]
                     local_debug = ${var_value0}
-                [ElseIf Literal=IgnoreCase,FromVariable=var_name0]
+                [ElseIf IgnoreCase,FromVariable=var_name0]
                 image
                     [Assign]
                     local_image = ${var_value0}
-                [ElseIf Literal=IgnoreCase,FromVariable=var_name0]
+                [ElseIf IgnoreCase,FromVariable=var_name0]
                 md5
                     [Assign]
                     local_md5 = ${var_value0}
-                [ElseIf Literal=IgnoreCase,FromVariable=var_name0]
+                [ElseIf IgnoreCase,FromVariable=var_name0]
                 RomFile
                     [Assign]
                     local_rom_file = ${var_value0}
-                [ElseIf Literal=IgnoreCase,FromVariable=var_name0]
+                [ElseIf IgnoreCase,FromVariable=var_name0]
                 RomId
                     [Assign]
                     local_rom_id = ${var_value0}
-                [ElseIf Literal=IgnoreCase,FromVariable=var_name0]
+                [ElseIf IgnoreCase,FromVariable=var_name0]
                 RomMd5
                     [Assign]
                     local_rom_md5 = ${var_value0}
@@ -187,7 +187,7 @@ series [^\S\n]*  : [^\S\n]* (?<model>\S+)
             [EndIf]
         [EndIf]
 
-        [If Literal=IgnoreCase,FromVariable=model]
+        [If IgnoreCase,FromVariable=model]
         ${series}
             [Assign]
             verify   = ${local_verify}
@@ -241,7 +241,7 @@ ${}
         [Error]
         No matching entry for series '${series}' in IOS table
 
-    [ElseIf FromVariable=matches,Regex]
+    [ElseIf Regex,FromVariable=matches]
     ==+
         [Error]
         Multiple matching entries for series '${series}' in IOS table

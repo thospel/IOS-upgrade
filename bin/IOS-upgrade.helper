@@ -11,7 +11,7 @@ DEVICE_APPLY = "/opt/Shell/tooling/device-apply/bin/device-apply"
 # DEVICE_APPLY = "device-apply"
 PACKAGE_VERSION = "1.0"
 PREFIX = "IOS-upgrade."
-VERSION_MIN = "1.4.72"
+VERSION_MIN = "1.5.8"
 
 if __name__=='__main__':
     if len(sys.argv) > 1 and sys.argv[1] == "--version" or \

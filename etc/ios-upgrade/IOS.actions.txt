@@ -17,7 +17,7 @@ show version | include ystem image file
 
 # Extract the actual system image name into variable image. So after this:
 #    image = bootflash:asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext.
-[If Regex=IgnoreCase, FromVariable=version]
+[If Regex, IgnoreCase, FromVariable=version]
 System image file is "(?<result>.*)"
     [Assign]
     image = ${result}
@@ -65,7 +65,7 @@ shell-test-cisco
 # old_file is the part of old_path after the last / which happens with
 # directories
 # old_file is without .bin
-[If Not,Regex=Verbose, FromVariable=image, Single]
+[If Not,Regex, Verbose, FromVariable=image, Single]
 
 # Filesystem name can contain - (e.g. 'sup-bootdisk' on USHOUWTCMP650)
 (?<filesystem>[\w-]+) :
@@ -132,13 +132,13 @@ shell-test-cisco
         [Commands DefineVariable=file_check, IgnoreError]
         dir ${filesystem}:${new_file}
 
-        [If Regex,Substring,FromVariable=file_check]
+        [If Regex,Match=Substring,FromVariable=file_check]
         \  ${new_file}$
 
             [Assign]
             have_image_file=1
 
-        [ElseIf Regex,Substring,FromVariable=file_check]
+        [ElseIf Regex,Match=Substring,FromVariable=file_check]
         %Error .*
 
             [Assign]
@@ -172,13 +172,13 @@ shell-test-cisco
         [Commands DefineVariable=file_check, IgnoreError]
         dir ${filesystem}:${rom_file}
 
-        [If Regex,Substring,FromVariable=file_check]
+        [If Regex,Match=Substring,FromVariable=file_check]
         \  ${rom_file}$
 
             [Assign]
             have_rom_file=1
 
-        [ElseIf Regex,Substring,FromVariable=file_check]
+        [ElseIf Regex,Match=Substring,FromVariable=file_check]
         %Error .*
 
             [Assign]

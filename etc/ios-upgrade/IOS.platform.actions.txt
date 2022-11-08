@@ -9,12 +9,12 @@ ${}
 firmwares= ${} ${}
 slots=
 
-[If Regex=IgnoreCase:Verbose,FromVariable=platform,Single]
+[If Regex, IgnoreCase, Verbose, FromVariable=platform, Single]
 Slot \s+ CPLD \s+ Version \s+ Firmware \s+ Version \n
 -+ \s+ -+ \s+ -+ \n
 (?<platform_body>(?:.+\n)+)
 
-    [While Regex=Verbose,FromVariable=platform_body]
+    [While Regex, Verbose, FromVariable=platform_body]
     (?<slot>\w+) \s+ (?<clpd>\d+) \s+ (?<firmware>\S+) |
     (?<other>.+)
 
@@ -26,7 +26,7 @@ Slot \s+ CPLD \s+ Version \s+ Firmware \s+ Version \n
             [Error]
             Could not parse 'show platform' output line: '${other}'
         [EndIf]
-        [If Not,FromVariable=firmwares,Substring]
+        [If Not,FromVariable=firmwares,Match=Substring]
         ${} ${firmware} ${}
             [Assign]
             firmwares = ${firmwares}${firmware} ${}

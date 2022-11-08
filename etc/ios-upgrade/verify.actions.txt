@@ -15,7 +15,7 @@ ${}
     verify ${file}
 
     # Get last non-empty line from verification result
-    [If Regex,Substring,FromVariable=verify_result]
+    [If Regex,Match=Substring,FromVariable=verify_result]
     (?<last_line>.+)\n*\Z
         [Assign]
         verify_result=${last_line}
@@ -25,7 +25,7 @@ ${}
     [EndIf]
 
     # If the verify failed we will bail out
-    [If Regex,Substring,FromVariable=verify_result, Not]
+    [If Regex,Match=Substring,FromVariable=verify_result, Not]
     signature successfully verified
         [Error]
         ${caller.context}: ${verify_result}
@@ -35,7 +35,7 @@ ${}
     verify /md5 ${file}
 
     # Get last non-empty line from verification result
-    [If Regex,Substring,FromVariable=verify_result]
+    [If Regex,Match=Substring,FromVariable=verify_result]
     (?<last_line>.+)\n*\Z
         [Assign]
         verify_result=${last_line}
@@ -45,9 +45,9 @@ ${}
     [EndIf]
 
     # If the verify failed we will bail out
-    [If Regex,Substring,FromVariable=verify_result]
+    [If Regex,Match=Substring,FromVariable=verify_result]
     verify\s.*=\s*(?<got_md5>\S+)
-        [If Not,Literal=IgnoreCase,FromVariable=md5]
+        [If Not,IgnoreCase,FromVariable=md5]
         ${got_md5}
             [Error]
             ${caller.context}: md5(${file}) = ${got_md5}, expected ${md5}
