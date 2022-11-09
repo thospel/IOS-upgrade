@@ -22,7 +22,7 @@ define: have_rom_file
 define: valid_rom
 
 # Load FTP credentials
-[Define BodyFromFile=$CURRENT_DIR/jumpserver.ftp.gpg, Secret=False, Prefix=ftp_]
+[Define BodyFromFile=${env.server_credentials}, Secret=False, Prefix=ftp_]
 
 # Hide FTP password in logs
 [Secret]

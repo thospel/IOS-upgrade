@@ -4,7 +4,7 @@ probe = ${caller.probe}
 [Commands DefineVariable=platform,IgnoreError]
 show platform
 
-[If Regex,FromVariable=platform,Match=Substring]
+[If Regex,FromVariable=platform,Anchor=Substring]
 \A\s*% ${}
 
     [If FromVariable=probe]
@@ -44,7 +44,7 @@ Slot \s+ CPLD \s+ Version \s+ Firmware \s+ Version \n
             [Error]
             Could not parse 'show platform' output line: '${other}'
         [EndIf]
-        [If Not,FromVariable=firmwares,Match=Substring]
+        [If Not,FromVariable=firmwares,Anchor=Substring]
         ${} ${firmware} ${}
             [Assign]
             firmwares = ${firmwares}${firmware} ${}

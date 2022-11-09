@@ -1,7 +1,7 @@
 # Load IOS table
 
 # Load IOS upgrade table
-[Define Variable=ios_table,Single,BodyFromFile=$CURRENT_DIR/cisco_ios.table.txt]
+[Define Variable=ios_table,Single,BodyFromFile=${env.ios_table}]
 
 [Define]
 parser_version = 1

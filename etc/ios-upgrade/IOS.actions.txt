@@ -17,7 +17,7 @@ probe = ${caller.probe}
 show version | include ^[Ss]ystem image file is|_uptime is
 
 # Extract uptime
-[If Regex, FromVariable=version,Match=Substring]
+[If Regex, FromVariable=version,Anchor=Substring]
 \ uptime is (?<uptime>.*)
 
 # Extract the actual system image name into variable image. So after this:
@@ -138,19 +138,19 @@ shell-test-cisco
         [Commands DefineVariable=file_check, IgnoreError]
         dir ${filesystem}:${new_file}
 
-        [If Regex,Match=Substring,FromVariable=file_check]
+        [If Regex,Anchor=Substring,FromVariable=file_check]
         \  ${new_file}$
 
             [Assign]
             have_image_file=1
 
-        [ElseIf Regex,Match=Substring,FromVariable=file_check]
+        [ElseIf Regex,Anchor=Substring,FromVariable=file_check]
         %Error .*
 
             [Assign]
             have_image_file=0
 
-        [ElseIf Regex,Match=Substring,FromVariable=file_check]
+        [ElseIf Regex,Anchor=Substring,FromVariable=file_check]
         Command authorization failed
 
             [If FromVariable=probe]
@@ -203,19 +203,19 @@ shell-test-cisco
         [Commands DefineVariable=file_check, IgnoreError]
         dir ${filesystem}:${rom_file}
 
-        [If Regex,Match=Substring,FromVariable=file_check]
+        [If Regex,Anchor=Substring,FromVariable=file_check]
         \  ${rom_file}$
 
             [Assign]
             have_rom_file=1
 
-        [ElseIf Regex,Match=Substring,FromVariable=file_check]
+        [ElseIf Regex,Anchor=Substring,FromVariable=file_check]
         %Error .*
 
             [Assign]
             have_rom_file=0
 
-        [ElseIf Regex,Match=Substring,FromVariable=file_check]
+        [ElseIf Regex,Anchor=Substring,FromVariable=file_check]
         Command authorization failed
 
             [If FromVariable=probe]
