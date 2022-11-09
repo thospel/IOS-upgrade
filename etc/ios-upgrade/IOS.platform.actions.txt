@@ -1,5 +1,23 @@
-[Commands DefineVariable=platform]
+[Define]
+probe = ${caller.probe}
+
+[Commands DefineVariable=platform,IgnoreError]
 show platform
+
+[If Regex,FromVariable=platform,Match=Substring]
+\A\s*% ${}
+
+    [If FromVariable=probe]
+    1
+        [Return]
+        slots = ?
+        firmware = ?
+    [Else]
+        [Error]
+        Command 'show platform' failed: ${platform}
+    [EndIf]
+
+[EndIf]
 
 [Assign Single]
 platform = ${platform}
@@ -31,12 +49,18 @@ Slot \s+ CPLD \s+ Version \s+ Firmware \s+ Version \n
             [Assign]
             firmwares = ${firmwares}${firmware} ${}
         [EndIf]
+
         [Assign]
         slots = ${slots} ${slot}
     [Else]
         [Error]
         Could not parse 'show platform' body
     [EndWhile]
+[ElseIf FromVariable=probe]
+1
+    [Return]
+    slots = ?
+    firmware = ?
 [Else]
     [Error]
     Could not parse 'show platform' output

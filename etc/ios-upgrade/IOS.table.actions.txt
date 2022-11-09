@@ -6,6 +6,7 @@
 [Define]
 parser_version = 1
 
+probe      = ${caller.probe}
 series     = ${caller.series}
 top_verify = 1
 top_ftp    = 1
@@ -238,8 +239,11 @@ ${}
 ${}
     [If FromVariable=matches]
     ${}
-        [Error]
-        No matching entry for series '${series}' in IOS table
+        [If Not,FromVariable=probe]
+        1
+            [Error]
+            No matching entry for series '${series}' in IOS table
+        [EndIf]
 
     [ElseIf Regex,FromVariable=matches]
     ==+

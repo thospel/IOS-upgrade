@@ -1,0 +1,99 @@
+#!/opt/Shell/tooling/device-apply/bin/device-apply -A
+
+# Create a report of IOS and ROM versions. Needs only R/O access
+
+[Define]
+report_file    = ${global.work_dir}/IOS_report.txt
+upgrade_file   = ${global.work_dir}/IOS_upgrade.txt
+noupgrade_file = ${global.work_dir}/IOS_noupgrade.txt
+upgrade_ios = ?
+upgrade_firmware = ?
+upgrade = No
+
+# Make sure noupgrade_file will exist even if empty
+[Print FileFromVariable=noupgrade_file]
+
+# Make sure upgrade_file will exist even if empty
+[Print FileFromVariable=upgrade_file]
+
+# Make sure there is a record for a device in report_file even in case of error
+[Print FileFromVariable=report_file]
+======================
+Device:     ${global.device_name}
+
+[Include File=IOS.actions.txt]
+argument: probe = 1
+
+define: series
+define: filesystem
+define: uptime
+
+define: old_file
+define: new_file
+define: valid_image
+
+define: rom_file
+define: valid_rom
+define: old_rom_id
+define: rom_id
+
+[If FromVariable=new_file]
+${}
+    [Assign]
+    new_file = ?
+    valid_image = ?
+[ElseIf FromVariable=valid_image]
+0
+    [Assign]
+    upgrade_ios = Yes
+    upgrade = Yes
+[ElseIf FromVariable=valid_image]
+1
+    [Assign]
+    upgrade_ios = No
+[EndIf]
+
+[If FromVariable=rom_id]
+${}
+    [Assign]
+    rom_id = ?
+    valid_rom = ?
+[ElseIf FromVariable=valid_rom]
+0
+    [Assign]
+    upgrade_firmware = Yes
+    upgrade = Yes
+[ElseIf FromVariable=valid_rom]
+1
+    [Assign]
+    upgrade_firmware = No
+[EndIf]
+
+[If FromVariable=upgrade]
+No
+    [Print FileFromVariable=noupgrade_file]
+    ${global.device_name}
+[ElseIf FromVariable=upgrade]
+Yes
+    [Print FileFromVariable=upgrade_file]
+    ${global.device_name}
+[Else]
+    [Error]
+    Assertion: Invalid upgrade value ${upgrade}
+[EndIf]
+
+[Print FileFromVariable=report_file,Raw]
+
+Series:     ${series}
+FileSystem: ${filesystem}
+Uptime:     ${uptime}
+
+CurrentIOS: ${old_file}
+TargetIOS:  ${new_file}
+UpgradeIOS: ${upgrade_ios}
+
+CurrentFirmware: ${old_rom_id}
+TargetFirmware:  ${rom_id}
+UpgradeFirmware: ${upgrade_firmware}
+
+Upgrade: ${upgrade}

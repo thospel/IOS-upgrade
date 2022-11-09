@@ -9,11 +9,16 @@ valid_image=
 old_rom_id=
 valid_rom=
 device_name = ${global.device_name}
+probe = ${caller.probe}
 
 # Run show version, filter and store result in variable 'version'
 # version = System image file is "bootflash:asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext."
 [Commands DefineVariable=version]
-show version | include ystem image file
+show version | include ^[Ss]ystem image file is|_uptime is
+
+# Extract uptime
+[If Regex, FromVariable=version,Match=Substring]
+\ uptime is (?<uptime>.*)
 
 # Extract the actual system image name into variable image. So after this:
 #    image = bootflash:asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext.
@@ -99,6 +104,7 @@ shell-test-cisco
     Could not parse image ${image}
 [Else]
     [Include File=IOS.table.actions.txt]
+    argument: probe
     argument: series
 
     define: new_file = ${return.image}
@@ -144,6 +150,18 @@ shell-test-cisco
             [Assign]
             have_image_file=0
 
+        [ElseIf Regex,Match=Substring,FromVariable=file_check]
+        Command authorization failed
+
+            [If FromVariable=probe]
+            1
+                [Assign]
+                have_image_file=?
+            [Else]
+                [Error]
+                Command 'dir': ${file_check}
+            [EndIf]
+
         [Else]
             [Error]
             Cannot parse output from dir ${filesystem}:${new_file}
@@ -164,9 +182,22 @@ shell-test-cisco
     # Do we want a specific ROM ?
     [If FromVariable=rom_file]
     ${}
-        [Assign]
-        have_rom_file=1
-        valid_rom=1
+        [If FromVariable=probe]
+        1
+            [Include File=IOS.platform.actions.txt]
+            argument: probe
+            define: old_rom_id0 = ${return.firmware}
+
+            [Assign]
+            old_rom_id = ${old_rom_id0}
+            have_rom_file=?
+            valid_rom=?
+
+        [Else]
+            [Assign]
+            have_rom_file=1
+            valid_rom=1
+        [EndIf]
     [Else]
         # Do we have the new ROM ?
         [Commands DefineVariable=file_check, IgnoreError]
@@ -184,6 +215,18 @@ shell-test-cisco
             [Assign]
             have_rom_file=0
 
+        [ElseIf Regex,Match=Substring,FromVariable=file_check]
+        Command authorization failed
+
+            [If FromVariable=probe]
+            1
+                [Assign]
+                have_rom_file=?
+            [Else]
+                [Error]
+                Command 'dir': ${file_check}
+            [EndIf]
+
         [Else]
             [Error]
             Cannot parse output from dir ${filesystem}:${rom_file}
@@ -191,6 +234,7 @@ shell-test-cisco
         [EndIf]
 
         [Include File=IOS.platform.actions.txt]
+        argument: probe
         define: old_rom_id0 = ${return.firmware}
 
         [Assign]
@@ -220,7 +264,9 @@ shell-test-cisco
     debug        = ${debug}
     verify       = ${verify}
     ftp          = ${ftp}
+    series       = ${series}
     filesystem   = ${filesystem}
+    uptime       = ${uptime}
 
     old_file     = ${old_path}
     new_file     = ${new_file}

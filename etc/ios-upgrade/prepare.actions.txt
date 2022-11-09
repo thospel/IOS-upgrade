@@ -3,6 +3,8 @@
 # Upload a new image
 
 [Include File=IOS.actions.txt]
+argument: probe = 0
+
 define: debug
 define: verify
 define: ftp

@@ -3,6 +3,8 @@
 # Reboot to new IOS
 
 [Include File=IOS.actions.txt]
+argument: probe = 0
+
 define: debug
 define: verify
 define: filesystem
