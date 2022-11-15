@@ -5,6 +5,8 @@ from subprocess import run
 import sys
 import os
 
+import colorama		# type: ignore
+
 FILE = Path(__file__).resolve()
 CONFIG_DIR  = FILE.parents[1] / "etc" / "ios-upgrade"
 DEVICE_APPLY = "/opt/Shell/tooling/device-apply/bin/device-apply"
@@ -15,9 +17,21 @@ DEVICE_APPLY = "/opt/Shell/tooling/device-apply/bin/device-apply"
 DEVICE_APPLY_NAME = "ios-upgrade"
 PACKAGE_VERSION = "1.0"
 PREFIX = "IOS-upgrade."
-VERSION_MIN = "1.5.19"
+VERSION_MIN = "1.5.20"
 IOS_TABLE = "cisco_ios.table.txt"
 ENV_IOS_TABLE = "ios_table"
+
+def red(text: str) -> str:
+    """Wrap text in ANSI escapes so it will display as red
+
+    Args:
+        text: The text to be decorated as red
+
+    Returns:
+        Decorated text
+    """
+    result: str = colorama.Style.BRIGHT + colorama.Fore.RED + text + colorama.Fore.RESET + colorama.Style.NORMAL
+    return result
 
 if __name__=='__main__':
     if len(sys.argv) > 1 and sys.argv[1] == "--version" or \
@@ -37,13 +51,13 @@ if __name__=='__main__':
                       "--version-min", VERSION_MIN,
                       "--no-verbose",
                       "-W", temp_dir,
-                      "-A", str(CONFIG_DIR / "IOS.actions.txt"),
+                      "-A", str(CONFIG_DIR / "IOS.check_table.actions.txt"),
                       os.devnull],
                      executable = DEVICE_APPLY,
                      text=True,
                      capture_output=True)
         if result.returncode:
-            sys.stdout.write(result.stderr or "Unknown error")
+            print(red(result.stderr.strip() or result.stdout.strip() or "Unknown error"))
             sys.exit(result.returncode if result.returncode > 0 else 1)
 
     name = Path(sys.argv[1]).name
