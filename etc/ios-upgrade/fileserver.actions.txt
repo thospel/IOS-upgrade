@@ -1,0 +1,13 @@
+[Commands Single, DefineVariable=fileserver_result]
+copy ${global.fileserver_url}${caller.file} ${caller.filesystem}:
+# Press enter 3 times to confirm user/pass/path
+${}
+${}
+${}
+${}
+
+[If Not,Regex,FromVariable=fileserver_result,Anchor=Substring]
+^\d+ bytes copied
+    [Error]
+    Cannot find "bytes copied" in copy output
+[EndIf]

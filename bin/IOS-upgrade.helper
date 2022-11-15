@@ -15,11 +15,9 @@ DEVICE_APPLY = "/opt/Shell/tooling/device-apply/bin/device-apply"
 DEVICE_APPLY_NAME = "ios-upgrade"
 PACKAGE_VERSION = "1.0"
 PREFIX = "IOS-upgrade."
-VERSION_MIN = "1.5.11"
+VERSION_MIN = "1.5.19"
 IOS_TABLE = "cisco_ios.table.txt"
-SERVER_CREDENTIALS = "jumpserver.ftp.gpg"
 ENV_IOS_TABLE = "ios_table"
-ENV_SERVER_CREDENTIALS = "server_credentials"
 
 if __name__=='__main__':
     if len(sys.argv) > 1 and sys.argv[1] == "--version" or \
@@ -33,7 +31,6 @@ if __name__=='__main__':
                       [DEVICE_APPLY_NAME, "--help"])
 
     os.environ[ENV_IOS_TABLE] = str(Path(IOS_TABLE).resolve())
-    os.environ[ENV_SERVER_CREDENTIALS] = str(Path(SERVER_CREDENTIALS).resolve())
 
     with TemporaryDirectory() as temp_dir:
         result = run([DEVICE_APPLY_NAME,
@@ -54,5 +51,7 @@ if __name__=='__main__':
         name = name[len(PREFIX):]
     os.execvp(DEVICE_APPLY,
               [DEVICE_APPLY_NAME,
+               "--verbose",
+               "--no-check-alone",
                "-A", str(CONFIG_DIR / ("%s.actions.txt" % name)),
                *sys.argv[2:]])

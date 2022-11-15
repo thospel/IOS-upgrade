@@ -133,7 +133,19 @@ shell-test-cisco
         rom_md5  = ${rom_md5}
     [EndIf]
 
-    [Scope]
+    [If FromVariable=new_file]
+    ${}
+
+        [If FromVariable=probe]
+        1
+            [Assign]
+            valid_image=?
+            have_image_file=?
+        [Else]
+            [Error]
+            Assertion: dir on unknown new image
+        [EndIf]
+    [Else]
         # Do we have the new image ?
         [Commands DefineVariable=file_check, IgnoreError]
         dir ${filesystem}:${new_file}
@@ -177,7 +189,7 @@ shell-test-cisco
             [Assign]
             valid_image=0
         [EndIf]
-    [EndScope]
+    [EndIf]
 
     # Do we want a specific ROM ?
     [If FromVariable=rom_file]

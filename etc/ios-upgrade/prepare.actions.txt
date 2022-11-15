@@ -21,48 +21,28 @@ define: rom_md5
 define: have_rom_file
 define: valid_rom
 
-# Load FTP credentials
-[Define BodyFromFile=${env.server_credentials}, Secret=False, Prefix=ftp_]
-
-# Hide FTP password in logs
-[Secret]
-${ftp_Password}
-
-# If ftp_server is unset replace it by the local IP address
-# (so this will become the local jumpserver IP)
-[If FromVariable=ftp_Server]
-0.0.0.0
-  [Assign]
-  ftp_Server = ${global.device_local_ip}
-[EndIf]
-
 [If Not,FromVariable=debug]
 0
   [Print]
-  FTP:
-    me = ftpuser
-    user = ${ftp_User}
-    pass = ${ftp_Password}
-    host = ${ftp_Server}
-    path = ${ftp_Path}
+    proto = ${global.fileserver_protocol}
+    host  = ${global.fileserver_host}
+    path  = ${global.fileserver_path}
+    user  = ${global.fileserver_user}
+    pass  = ${global.fileserver_password}
 [EndIf]
 
 [Scope]
     [If Not,FromVariable=have_image_file]
     1
-      [If FromVariable=ftp]
-      0
-        [Error]
-        Need to fetch IOS image ${filesystem}:${new_file} but ftp=${ftp} (not 1)
-      [Else]
-        [Commands Single]
-        copy ftp://${ftp_User}:${ftp_Password}@${ftp_Server}${ftp_Path}${new_file} ${filesystem}:${new_file}
-        # Press enter 3 times to confirm user/pass/path
-        ${}
-        ${}
-        ${}
-        ${}
-      [EndIf]
+        [If FromVariable=ftp]
+        0
+            [Error]
+            Need to fetch IOS image ${filesystem}:${new_file} but ftp=${ftp} (not 1)
+        [Else]
+            [Include File=fileserver.actions.txt]
+            argument: filesystem
+            argument: file = ${new_file}
+        [EndIf]
     [EndIf]
 
     [If Not,FromVariable=verify]
@@ -79,19 +59,15 @@ ${ftp_Password}
 1
     [If Not,FromVariable=have_rom_file]
     1
-      [If FromVariable=ftp]
-      0
-        [Error]
-        Need to fetch ROM ${filesystem}:${rom_file} but ftp=${ftp} (not 1)
-      [Else]
-        [Commands Single]
-        copy ftp://${ftp_User}:${ftp_Password}@${ftp_Server}${ftp_Path}${rom_file} ${filesystem}:${rom_file}
-        # Press enter 3 times to confirm user/pass/path
-        ${}
-        ${}
-        ${}
-        ${}
-      [EndIf]
+        [If FromVariable=ftp]
+        0
+            [Error]
+            Need to fetch ROM ${filesystem}:${rom_file} but ftp=${ftp} (not 1)
+        [Else]
+            [Include File=fileserver.actions.txt]
+            argument: filesystem
+            argument: file = ${rom_file}
+        [EndIf]
     [EndIf]
 
     [If Not,FromVariable=verify]
