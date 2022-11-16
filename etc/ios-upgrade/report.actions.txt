@@ -27,6 +27,9 @@ argument: probe = 1
 define: series
 define: filesystem
 define: uptime
+define: speed_file
+define: speed_md5
+
 
 define: old_file
 define: new_file
@@ -82,18 +85,24 @@ Yes
     Assertion: Invalid upgrade value ${upgrade}
 [EndIf]
 
-[Print FileFromVariable=report_file,Raw]
-
+[Print FileFromVariable=report_file]
+${}
 Series:     ${series}
 FileSystem: ${filesystem}
 Uptime:     ${uptime}
-
+${}
 CurrentIOS: ${old_file}
 TargetIOS:  ${new_file}
 UpgradeIOS: ${upgrade_ios}
-
+${}
 CurrentFirmware: ${old_rom_id}
 TargetFirmware:  ${rom_id}
 UpgradeFirmware: ${upgrade_firmware}
-
+${}
 Upgrade: ${upgrade}
+
+[Return]
+report_file = ${report_file}
+filesystem = ${filesystem}
+speed_file = ${speed_file}
+speed_md5  = ${speed_md5}

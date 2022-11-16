@@ -105,13 +105,18 @@ shell-test-cisco
 [Else]
     [Include File=IOS.table.actions.txt]
     argument: probe
+
+    define: verify
+    define: ftp
+    define: debug
+    define: speed_file
+    define: speed_md5
+
     argument: series
 
     define: new_file = ${return.image}
     define: new_md5  = ${return.md5}
-    define: verify
-    define: ftp
-    define: debug
+
     define: rom_file
     define: rom_id
     define: rom_md5
@@ -276,6 +281,9 @@ shell-test-cisco
     debug        = ${debug}
     verify       = ${verify}
     ftp          = ${ftp}
+    speed_file   = ${speed_file}
+    speed_md5    = ${speed_md5}
+
     series       = ${series}
     filesystem   = ${filesystem}
     uptime       = ${uptime}

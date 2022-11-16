@@ -3,6 +3,9 @@ Version = 1
 # ftp = 1
 # debug = 0
 
+# Used for transfer speed measurements
+SpeedFile = size_1M_5b61ebb2f6f5c330af8a8b97b835f58e
+
 Series: asr1000rp1
   Image = asr1000rp1-adventerprisek9.03.16.10.S.155-3.S10-ext.bin
 

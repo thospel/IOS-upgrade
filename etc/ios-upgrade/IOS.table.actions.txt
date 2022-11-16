@@ -5,6 +5,7 @@
 
 [Define]
 parser_version = 1
+models =
 
 probe      = ${caller.probe}
 series     = ${caller.series}
@@ -12,24 +13,45 @@ top_verify = 1
 top_ftp    = 1
 top_debug  = 0
 top_version=
+top_speed_file=
+top_speed_md5=
 
 matches =
 
 verify=
 ftp=
 debug=
+
 image=
 md5=
+
 rom_file=
 rom_id=
 rom_md5=
 
+speed_file=
+speed_md5=
+
 # Determine if we need an upgrade and to what we need to upgrade
 [While Regex,IgnoreCase,Verbose,FromVariable=ios_table,Single]
-(?<comment>\#.*)				|	# Comment
-(?<var_name>verify|ftp|debug) [^\S\n]* = [^\S\n]* (?<var_value>[01])	|	# boolean variable
-(?<var_name>version) [^\S\n]* = [^\S\n]* (?<var_value>\d+)	|	# numeric variable
-series [^\S\n]*  : [^\S\n]* (?<model>\S+)
+
+# Comment
+(?<comment>\#.*)				|
+
+# boolean variable
+| (?<var_name>verify|ftp|debug) [^\S\n]* = [^\S\n]* (?<var_value>[01])
+
+# numeric variable
+| (?<var_name>version) [^\S\n]* = [^\S\n]* (?<var_value>\d+)
+
+# string variable
+| (?<var_name>SpeedFile) [^\S\n]* = [^\S\n]* (?<var_value>\S+)
+
+# hex var
+| (?<var_name>SpeedMd5) [^\S\n]* = [^\S\n]* (?<var_value>[0-9a-f]{32})
+
+# model/body
+| series [^\S\n]*  : [^\S\n]* (?<model>\S+)
    (?<body>
      (\n
         (?:
@@ -37,8 +59,10 @@ series [^\S\n]*  : [^\S\n]* (?<model>\S+)
             [^\S\n]* (?: \#.* | )			# empty line/comment
         )
      )*
-   )						|	# model/body
-(?<other>.+)
+   )
+
+# Anything unhandled
+| (?<other>.+)
 
     # Set empty values if there is no match
     [Assign]
@@ -52,11 +76,23 @@ series [^\S\n]*  : [^\S\n]* (?<model>\S+)
         [If IgnoreCase,FromVariable=var_name]
         verify
             [Assign]
-            top_verify = ${var_value}
+            top_verify	= ${var_value}
         [ElseIf IgnoreCase,FromVariable=var_name]
         ftp
             [Assign]
-            top_ftp    = ${var_value}
+            top_ftp	= ${var_value}
+        [ElseIf IgnoreCase,FromVariable=var_name]
+        debug
+            [Assign]
+            top_debug	= ${var_value}
+        [ElseIf IgnoreCase,FromVariable=var_name]
+        SpeedFile
+            [Assign]
+            top_speed_file = ${var_value}
+        [ElseIf IgnoreCase,FromVariable=var_name]
+        SpeedMd5
+            [Assign]
+            top_speed_md5  = ${var_value}
         [ElseIf IgnoreCase,FromVariable=var_name]
         version
             [Assign]
@@ -66,10 +102,6 @@ series [^\S\n]*  : [^\S\n]* (?<model>\S+)
                 [Error]
                 IOS file: Format version ${top_version}, expected ${parser_version}
             [EndIf]
-        [ElseIf IgnoreCase,FromVariable=var_name]
-        debug
-            [Assign]
-            top_debug    = ${var_value}
         [Else]
             [Error]
             Assertion; No handler for top level variable ${var_name}
@@ -80,14 +112,27 @@ series [^\S\n]*  : [^\S\n]* (?<model>\S+)
         IOS file: Cannot parse '${other}'
     [ElseIf Not,FromVariable=model]
     ${}
+        [If FromVariable=models]
+        ${model}
+            [Error]
+            IOS file: Duplicate Series '${model}'
+        [EndIf]
+
         # Make initial \n into a comment
         [Assign]
         body = #${body}
+
+        [Assign Single]
+        models = ${models}${model}
+        ${}
 
         [Define]
         local_verify   = ${top_verify}
         local_ftp      = ${top_ftp}
         local_debug    = ${top_debug}
+        local_speed_file = ${top_speed_file}
+        local_speed_md5  = ${top_speed_md5}
+
         local_image    =
         local_md5      =
         local_rom_file =
@@ -96,12 +141,21 @@ series [^\S\n]*  : [^\S\n]* (?<model>\S+)
 
         [While Regex,IgnoreCase,Verbose,FromVariable=body,Single]
         [^\S\n]* (?:
-          (?<comment0>\#.*)				  | # Comment
-          (?<var_name0>verify|ftp|debug)    [^\S\n]* = [^\S\n]* (?<var_value0>[01])   | # boolean var
-          (?<var_name0>Image|RomFile|RomId) [^\S\n]* = [^\S\n]* (?<var_value0>\S+)    | # string var
-          (?<var_name0>md5|RomMd5)          [^\S\n]* = [^\S\n]* (?<var_value0>[0-9a-f]{32}) # hex var
-        ) |
-        (?<other0>.+)
+          # Comment
+          (?<comment0>\#.*)
+
+          # boolean var
+          | (?<var_name0>verify|ftp|debug)    [^\S\n]* = [^\S\n]* (?<var_value0>[01])
+
+          # string var
+          | (?<var_name0>Image|RomFile|RomId|SpeedFile) [^\S\n]* = [^\S\n]* (?<var_value0>\S+)
+
+          # hex var
+          | (?<var_name0>md5|RomMd5|SpeedMd5) [^\S\n]* = [^\S\n]* (?<var_value0>[0-9a-f]{32})
+        )
+
+        # Anything unhandled
+        | (?<other0>.+)
 
             # Set empty values if there is no match
             [Assign]
@@ -123,6 +177,14 @@ series [^\S\n]*  : [^\S\n]* (?<model>\S+)
                 debug
                     [Assign]
                     local_debug = ${var_value0}
+                [ElseIf IgnoreCase,FromVariable=var_name0]
+                SpeedFile
+                    [Assign]
+                    local_speed_file = ${var_value0}
+                [ElseIf IgnoreCase,FromVariable=var_name0]
+                SpeedMd5
+                    [Assign]
+                    local_speed_md5 = ${var_value0}
                 [ElseIf IgnoreCase,FromVariable=var_name0]
                 image
                     [Assign]
@@ -194,8 +256,12 @@ series [^\S\n]*  : [^\S\n]* (?<model>\S+)
             verify   = ${local_verify}
             ftp      = ${local_ftp}
             debug    = ${local_debug}
+            speed_file = ${local_speed_file}
+            speed_md5  = ${local_speed_md5}
+
             image    = ${local_image}
             md5      = ${local_md5}
+
             rom_file = ${local_rom_file}
             rom_id   = ${local_rom_id}
             rom_md5  = ${local_rom_md5}
@@ -226,6 +292,8 @@ ${}
     verify   = ${verify}
     ftp      = ${ftp}
     debug    = ${debug}
+    speed_file = ${speed_file}
+    speed_md5  = ${speed_md5}
 
     image    = ${image}
     md5      = ${md5}
@@ -252,12 +320,23 @@ ${}
     [EndIf]
 [EndIf]
 
+[If FromVariable=speed_file]
+${}
+    # If no series entry matches inherit the global value
+    [Assign]
+    speed_file = ${top_speed_file}
+[EndIf]
+
 [Return]
 verify = ${verify}
 ftp    = ${ftp}
 debug  = ${debug}
+speed_file = ${speed_file}
+speed_md5  = ${speed_md5}
+
 image  = ${image}
 md5    = ${md5}
+
 rom_file = ${rom_file}
 rom_id = ${rom_id}
 rom_md5  = ${rom_md5}

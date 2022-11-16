@@ -1,0 +1,17 @@
+[Include File=report.actions.txt]
+
+define: report_file
+define: filesystem
+define: speed_file
+define: speed_md5
+
+[Include File=speed.actions.txt]
+argument: filesystem
+argument: probe = 1
+argument: file  = ${speed_file}
+argument: md5   = ${speed_md5}
+
+define: speed
+
+[Print FileFromVariable=report_file,Raw]
+File transfer speed: ${speed} bytes/sec

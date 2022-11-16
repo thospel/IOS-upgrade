@@ -6,8 +6,18 @@ ${}
 ${}
 ${}
 
-[If Not,Regex,FromVariable=fileserver_result,Anchor=Substring]
-^\d+ bytes copied
+[If Regex,FromVariable=fileserver_result]
+(?<transfer_line>(?<size>\d+) bytes copied.*)
+    [If Regex,FromVariable=transfer_line,Anchor=Substring]
+    \(\s*(?<speed>\d+)\s+bytes/sec\)$
+        [Return]
+        size  = ${size}
+        speed = ${speed}
+    [Else]
+        [Error]
+        Cannot parse file transfer message '${transfer_line}'
+    [Endif]
+[Else]
     [Error]
     Cannot find "bytes copied" in copy output
 [EndIf]

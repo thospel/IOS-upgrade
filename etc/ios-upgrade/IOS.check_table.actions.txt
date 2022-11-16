@@ -1,3 +1,19 @@
 [Include File=IOS.table.actions.txt]
 argument: probe = 1
 argument: series = dummy
+
+define: speed_file
+define: speed_md5
+
+[If FromVariable=speed_file]
+${}
+    [Define]
+    actions_name = ${env.actions_name}
+
+    [If FromVariable=actions_name,Anchor=Substring]
+    speed
+
+        [Error]
+        IOS file: No SpeedFile setting
+    [EndIf]
+[EndIf]

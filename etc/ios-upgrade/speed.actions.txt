@@ -1,0 +1,42 @@
+# Determine transfer speed
+
+[Define]
+probe = ${caller.probe}
+filesystem = ${caller.filesystem}
+file = ${caller.file}
+md5 = ${caller.md5}
+
+[If FromVariable=file]
+${}
+    [Error]
+    IOS file: Missing SpeedFile setting
+[EndIf]
+
+[Commands Single,IgnoreError]
+del ${filesystem}:${file}
+${}
+${}
+${}
+
+[Include File=fileserver.actions.txt]
+argument: filesystem
+argument: file
+
+define: speed
+
+[If Not,FromVariable=md5]
+${}
+    [Include File=verify.actions.txt]
+    argument: context = Transfer speed test file verify failure
+    argument: file = ${filesystem}:${file}
+    argument: md5
+[EndIf]
+
+[Commands Single]
+del ${filesystem}:${file}
+${}
+${}
+${}
+
+[Return]
+speed = ${speed}
