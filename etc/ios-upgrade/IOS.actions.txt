@@ -2,6 +2,7 @@
 
 [Define]
 fake = shell-test-cisco
+filesystem=
 image=
 have_image_file=
 have_rom_file=
@@ -21,59 +22,120 @@ show version | include ^[Ss]ystem image file is|_uptime is
 \ uptime is (?<uptime>.*)
 
 # Extract the actual system image name into variable image. So after this:
-#    image = bootflash:asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext.
-[If Regex, IgnoreCase, FromVariable=version]
-System image file is "(?<result>.*)"
-    [Assign]
-    image = ${result}
-[Else]
+#    filesystem = bootflash
+#    image =      asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext.
+[If Not,Regex, IgnoreCase, FromVariable=version]
+System image file is "(?<full_image>.*)"
+
     [Error]
     'show version' output does not contain 'System image file is "XXXX"'
+
+[Else]
+    # Notice that we remove any leading / from the image name
+    # Filesystem name can contain - (e.g. 'sup-bootdisk' on USHOUWTCMP650)
+    [If Not,Regex,FromVariable=full_image,Anchor=Substring]
+    ^(?<before>[\w-]+):/*(?<after>.*)
+        [Error]
+        Cannot determine current IOS image from ${full_image}
+    [Else]
+        [Assign]
+        filesystem = ${before}
+        image = ${after}
+
+        # The current image name should exist on the filesystem
+        [Include File=stat.actions.txt]
+        argument: filesystem
+        argument: file = ${image}
+
+        define: stat
+
+        [If Not,FromVariable=stat]
+        1
+            # Image Name could be truncated
+
+            [If Regex,FromVariable=full_image]
+            # Check for EXACTLY 63 characters.
+            # Less means too short for truncation,
+            # More means this system doesn't truncate
+            .{63}
+                [Define Substitute=Regex]
+                image_regex = ${image}
+                complete=
+
+                [Commands DefineVariable=dir]
+                show ${filesystem}: | include ${image_regex}
+
+                # Two sorts of typical output lines:
+                # 1. With filesystem.
+                #    However the filesystem name and ${filesystem} can differ
+                #    (eg. `show flash:` gives `/bootflash/XXX`)
+                #   5         18 Aug 29 2019 07:16:57.0000000000 +00:00 /bootflash/test.txt
+                # 2. Without filesystem:
+                #     2  -rwx    18229248  Nov 24 2015 09:50:02 +00:00  c2960x-universalk9-mz.150-2.EX5.bin
+
+                # We do not support the case where show filesystem: does not
+                # recursively list the contents and our image is in a
+                # subdirectory. In that case we will (incorrectly) error out
+                # Fortunately this does not seem to happen on our network
+
+                [While Regex,FromVariable=dir]
+                # Don't check for the specific filesystem
+                \s*\d+\s+.*\s+(?:/[^/]+/|)(?<full>${image}[^/]*)
+                    [If FromVariable=complete]
+                    ${}
+                        [Assign]
+                        complete=${full}
+                    [ElseIf Not,FromVariable=complete]
+                    # Yes, we sometimes get multiple identical entries in flash
+                    ${full}
+                        [Error]
+                        Multiple matches for file ${image}: ${complete} and ${full}
+                    [EndIf]
+                [Else]
+                    [Error]
+                    Could not not find (possible truncated) image file ${filesystem}${image}
+                [EndWhile]
+                [Assign]
+                image = ${complete}
+            [Else]
+                [Error]
+                Could not find image file ${filesystem}${image}
+            [EndIf]
+        [EndIf]
+    [EndIf]
 [EndIf]
 
 # Fake image on device named 'shell-test-cisco' for development
 [If FromVariable=device_name]
 shell-test-cisco
     [Assign]
-    image = flash:c3900-universalk9-mz.SPA.156-3.M8.bin
+    filesystem = flash
+    image =      c3900-universalk9-mz.SPA.156-3.M8.bin
 [EndIf]
 
 # Sometimes the image is something like bootflash:packages.conf
 # or even flash:cat3k_caa-universalk9.16.03.07.SPA.conf
 # For these we immediately exit with a dedicated error message
-[If Regex,FromVariable=image,Any]
-.*\.conf
-.*:unknown
-
-  [Error]
-  Parsing current system image "${image}" is not supported
-[EndIf]
-
-# Image names should end on .bin (possibly truncated)
-# Otherwise we don't really know if we have enough string for a proper parse
 [If Not,Regex,FromVariable=image]
-.*\.(?:b(?:in?)?)?
+.*\.bin
+
   [Error]
-  Current system image '${image}' does not end with '.bin'
+  Image "${image}" does not end in .bin. This is not supported (yet)
 [EndIf]
 
 # Parse something like
-#    bootflash:asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext.b
+#    asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext.bin
 # Into:
-#   filesystem = bootflash
 #   series = asr1000rp1
 #   features = adventerprisek9
 #   compressed =   (empty string, would be -mz for compressed images)
 #   old_release = 03.16.01a.S.155-3.S1a-ext
-#   old_path = asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext.b
-#   old_file = asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext
+#   old_path = asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext.bin
+#   old_file = asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext.bin
 # old_file is the part of old_path after the last / which happens with
 # directories
-# old_file is without .bin
 [If Not,Regex, Verbose, FromVariable=image, Single]
 
-# Filesystem name can contain - (e.g. 'sup-bootdisk' on USHOUWTCMP650)
-(?<filesystem>[\w-]+) :
 (?<old_path>
     # Directory part
     (?:.*/)?
@@ -94,10 +156,8 @@ shell-test-cisco
         (?<compressed>-mz|)
         \.
         (?<old_release>.*)
+        \.bin
     )
-    \.
-    # The .bin part is sometimes truncated
-    (?:b(?:in?)?)?
 )
 
     [Error]
@@ -130,9 +190,11 @@ shell-test-cisco
         features = ${features}
         compressed = ${compressed}
         release  = ${old_release}
+
         old_path = ${old_path}
         old_file = ${old_file}
         new_file = ${new_file}
+
         rom_file = ${rom_file}
         rom_id   = ${rom_id}
         rom_md5  = ${rom_md5}
@@ -148,46 +210,22 @@ shell-test-cisco
             have_image_file=?
         [Else]
             [Error]
-            Assertion: dir on unknown new image
+            Assertion: stat on unknown new image
         [EndIf]
     [Else]
         # Do we have the new image ?
-        [Commands DefineVariable=file_check, IgnoreError]
-        dir ${filesystem}:${new_file}
+        [Include file=stat.actions.txt]
+        argument: filesystem
+        argument: file = ${new_file}
 
-        [If Regex,Anchor=Substring,FromVariable=file_check]
-        \  ${new_file}$
+        define: stat
 
-            [Assign]
-            have_image_file=1
-
-        [ElseIf Regex,Anchor=Substring,FromVariable=file_check]
-        %Error .*
-
-            [Assign]
-            have_image_file=0
-
-        [ElseIf Regex,Anchor=Substring,FromVariable=file_check]
-        Command authorization failed
-
-            [If FromVariable=probe]
-            1
-                [Assign]
-                have_image_file=?
-            [Else]
-                [Error]
-                Command 'dir': ${file_check}
-            [EndIf]
-
-        [Else]
-            [Error]
-            Cannot parse output from dir ${filesystem}:${new_file}
-            ${file_check}
-        [EndIf]
+        [Assign]
+        have_image_file = ${stat}
 
         # Is an upgrade needed ?
         [If Regex, FromVariable=new_file]
-        ${old_file}(\.bin|bin|in|n|)
+        ${old_file}
             [Assign]
             valid_image=1
         [Else]
@@ -217,38 +255,14 @@ shell-test-cisco
         [EndIf]
     [Else]
         # Do we have the new ROM ?
-        [Commands DefineVariable=file_check, IgnoreError]
-        dir ${filesystem}:${rom_file}
+        [Include file=stat.actions.txt]
+        argument: filesystem
+        argument: file = ${rom_file}
 
-        [If Regex,Anchor=Substring,FromVariable=file_check]
-        \  ${rom_file}$
+        define: stat
 
-            [Assign]
-            have_rom_file=1
-
-        [ElseIf Regex,Anchor=Substring,FromVariable=file_check]
-        %Error .*
-
-            [Assign]
-            have_rom_file=0
-
-        [ElseIf Regex,Anchor=Substring,FromVariable=file_check]
-        Command authorization failed
-
-            [If FromVariable=probe]
-            1
-                [Assign]
-                have_rom_file=?
-            [Else]
-                [Error]
-                Command 'dir': ${file_check}
-            [EndIf]
-
-        [Else]
-            [Error]
-            Cannot parse output from dir ${filesystem}:${rom_file}
-            ${file_check}
-        [EndIf]
+        [Assign]
+        have_rom_file = ${stat}
 
         [Include File=IOS.platform.actions.txt]
         argument: probe
@@ -288,7 +302,8 @@ shell-test-cisco
     filesystem   = ${filesystem}
     uptime       = ${uptime}
 
-    old_file     = ${old_path}
+    old_file     = ${old_file}
+    old_path     = ${old_path}
     new_file     = ${new_file}
     new_md5      = ${new_md5}
     have_image_file = ${have_image_file}
