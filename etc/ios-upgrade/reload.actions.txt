@@ -7,9 +7,11 @@ argument: probe = 0
 
 define: debug
 define: verify
+define: reload
 define: filesystem
+define: uptime_exceeded
 
-define: old_file
+define: old_path
 define: new_file
 define: new_md5
 define: have_image_file
@@ -23,9 +25,11 @@ define: have_rom_file
 [Include File=reboot.actions.txt]
 argument: old_verify = ${verify}
 argument: new_verify = ${verify}
+argument: reload
 argument: filesystem
+argument: uptime_exceeded
 
-argument: old_file
+argument: old_path
 argument: new_file
 argument: new_md5
 argument: have_image_file

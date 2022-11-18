@@ -3,7 +3,9 @@
 [Define]
 fake = shell-test-cisco
 filesystem=
+uptime=
 image=
+prefix=
 have_image_file=
 have_rom_file=
 valid_image=
@@ -18,8 +20,14 @@ probe = ${caller.probe}
 show version | include ^[Ss]ystem image file is|_uptime is
 
 # Extract uptime
-[If Regex, FromVariable=version,Anchor=Substring]
-\ uptime is (?<uptime>.*)
+[If Not,Regex, FromVariable=version,Anchor=Substring]
+\ uptime is (?<up>.*)
+    [Error]
+    'show version' output does not contain device uptime
+[Else]
+    [Assign]
+    uptime = ${up}
+[EndIf]
 
 # Extract the actual system image name into variable image. So after this:
 #    filesystem = bootflash
@@ -34,13 +42,14 @@ System image file is "(?<full_image>.*)"
     # Notice that we remove any leading / from the image name
     # Filesystem name can contain - (e.g. 'sup-bootdisk' on USHOUWTCMP650)
     [If Not,Regex,FromVariable=full_image,Anchor=Substring]
-    ^(?<before>[\w-]+):/*(?<after>.*)
+    ^(?<before>[\w-]+):(?<absolute>/*)(?<after>.*)
         [Error]
         Cannot determine current IOS image from ${full_image}
     [Else]
         [Assign]
         filesystem = ${before}
-        image = ${after}
+        prefix =     ${absolute}
+        image =      ${after}
 
         # The current image name should exist on the filesystem
         [Include File=stat.actions.txt]
@@ -164,15 +173,17 @@ shell-test-cisco
     Could not parse image ${image}
 [Else]
     [Include File=IOS.table.actions.txt]
+    argument: series
     argument: probe
 
     define: verify
-    define: ftp
+    define: fetch
+    define: reload
     define: debug
     define: speed_file
     define: speed_md5
-
-    argument: series
+    define: max_uptime
+    define: uptime_exceeded = 0
 
     define: new_file = ${return.image}
     define: new_md5  = ${return.md5}
@@ -181,23 +192,30 @@ shell-test-cisco
     define: rom_id
     define: rom_md5
 
+    [If Regex,FromVariable=uptime,IgnoreCase,Anchor=Substring]
+    \b${max_uptime}
+        [Assign]
+        uptime_exceeded = 1
+    [EndIf]
+
     [If Not,FromVariable=debug]
     0
         [Print]
         filesystem = ${filesystem}
-        series = ${series}
-        software = ${software}
-        features = ${features}
+        series     = ${series}
+        software   = ${software}
+        features   = ${features}
         compressed = ${compressed}
-        release  = ${old_release}
+        release    = ${old_release}
+        uptime_exceeded = ${uptime_exceeded}
 
-        old_path = ${old_path}
-        old_file = ${old_file}
-        new_file = ${new_file}
+        old_path   = ${old_path}
+        old_file   = ${old_file}
+        new_file   = ${new_file}
 
-        rom_file = ${rom_file}
-        rom_id   = ${rom_id}
-        rom_md5  = ${rom_md5}
+        rom_file   = ${rom_file}
+        rom_id     = ${rom_id}
+        rom_md5    = ${rom_md5}
     [EndIf]
 
     [If FromVariable=new_file]
@@ -294,16 +312,19 @@ shell-test-cisco
     [Return]
     debug        = ${debug}
     verify       = ${verify}
-    ftp          = ${ftp}
+    fetch        = ${fetch}
+    reload       = ${reload}
     speed_file   = ${speed_file}
     speed_md5    = ${speed_md5}
+    max_uptime   = ${max_uptime}
 
     series       = ${series}
     filesystem   = ${filesystem}
     uptime       = ${uptime}
+    uptime_exceeded = ${uptime_exceeded}
 
     old_file     = ${old_file}
-    old_path     = ${old_path}
+    old_path     = ${prefix}${old_path}
     new_file     = ${new_file}
     new_md5      = ${new_md5}
     have_image_file = ${have_image_file}

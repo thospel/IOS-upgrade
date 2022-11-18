@@ -7,9 +7,12 @@ argument: probe = 0
 
 define: debug
 define: verify
-define: ftp
+define: fetch
+define: reload
 define: filesystem
+define: uptime_exceeded
 
+define: old_path
 define: old_file
 define: new_file
 define: new_md5
@@ -34,10 +37,10 @@ define: valid_rom
 [Scope]
     [If Not,FromVariable=have_image_file]
     1
-        [If FromVariable=ftp]
+        [If FromVariable=fetch]
         0
             [Error]
-            Need to fetch IOS image ${filesystem}:${new_file} but ftp=${ftp} (not 1)
+            Need to fetch IOS image ${filesystem}:${new_file} but fetch=${fetch} (not 1)
         [Else]
             [Include File=fileserver.actions.txt]
             argument: filesystem
@@ -59,10 +62,10 @@ define: valid_rom
 1
     [If Not,FromVariable=have_rom_file]
     1
-        [If FromVariable=ftp]
+        [If FromVariable=fetch]
         0
             [Error]
-            Need to fetch ROM ${filesystem}:${rom_file} but ftp=${ftp} (not 1)
+            Need to fetch ROM ${filesystem}:${rom_file} but fetch=${fetch} (not 1)
         [Else]
             [Include File=fileserver.actions.txt]
             argument: filesystem
@@ -82,9 +85,12 @@ define: valid_rom
 
 [Return]
 verify       = ${verify}
+reload       = ${reload}
 debug        = ${debug}
 filesystem   = ${filesystem}
+uptime_exceeded = ${uptime_exceeded}
 
+old_path     = ${old_path}
 old_file     = ${old_file}
 new_file     = ${new_file}
 new_md5      = ${new_md5}

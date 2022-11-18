@@ -10,16 +10,19 @@ models =
 probe      = ${caller.probe}
 series     = ${caller.series}
 top_verify = 1
-top_ftp    = 1
-top_debug  = 0
+top_fetch  = 1
+top_reload = 1
+top_debug  =
 top_version=
-top_speed_file=
-top_speed_md5=
+top_speed_file = speed_test
+top_speed_md5  =
+top_max_uptime = year
 
 matches =
 
 verify=
-ftp=
+fetch=
+reload=
 debug=
 
 image=
@@ -31,6 +34,22 @@ rom_md5=
 
 speed_file=
 speed_md5=
+max_uptime=
+
+option_debug = ${global.option_debug}
+
+[If FromVariable=option_debug]
+True
+    [Assign]
+    top_debug = 1
+[ElseIf FromVariable=option_debug]
+False
+    [Assign]
+    top_debug = 0
+[Else]
+    [Error]
+    Assertion: Impossible global.option_debug=${option_debug}
+[EndIf]
 
 # Determine if we need an upgrade and to what we need to upgrade
 [While Regex,IgnoreCase,Verbose,FromVariable=ios_table,Single]
@@ -39,13 +58,13 @@ speed_md5=
 (?<comment>\#.*)				|
 
 # boolean variable
-| (?<var_name>verify|ftp|debug) [^\S\n]* = [^\S\n]* (?<var_value>[01])
+| (?<var_name>verify|fetch|reload|debug) [^\S\n]* = [^\S\n]* (?<var_value>[01])
 
 # numeric variable
 | (?<var_name>version) [^\S\n]* = [^\S\n]* (?<var_value>\d+)
 
 # string variable
-| (?<var_name>SpeedFile) [^\S\n]* = [^\S\n]* (?<var_value>\S+)
+| (?<var_name>SpeedFile|MaxUptime) [^\S\n]* = [^\S\n]* (?<var_value>\S+)
 
 # hex var
 | (?<var_name>SpeedMd5) [^\S\n]* = [^\S\n]* (?<var_value>[0-9a-f]{32})
@@ -78,9 +97,13 @@ speed_md5=
             [Assign]
             top_verify	= ${var_value}
         [ElseIf IgnoreCase,FromVariable=var_name]
-        ftp
+        fetch
             [Assign]
-            top_ftp	= ${var_value}
+            top_fetch	= ${var_value}
+        [ElseIf IgnoreCase,FromVariable=var_name]
+        reload
+            [Assign]
+            top_reload	= ${var_value}
         [ElseIf IgnoreCase,FromVariable=var_name]
         debug
             [Assign]
@@ -93,6 +116,10 @@ speed_md5=
         SpeedMd5
             [Assign]
             top_speed_md5  = ${var_value}
+        [ElseIf IgnoreCase,FromVariable=var_name]
+        MaxUptime
+            [Assign]
+            top_max_uptime = ${var_value}
         [ElseIf IgnoreCase,FromVariable=var_name]
         version
             [Assign]
@@ -128,10 +155,12 @@ speed_md5=
 
         [Define]
         local_verify   = ${top_verify}
-        local_ftp      = ${top_ftp}
+        local_fetch    = ${top_fetch}
+        local_reload   = ${top_reload}
         local_debug    = ${top_debug}
         local_speed_file = ${top_speed_file}
         local_speed_md5  = ${top_speed_md5}
+        local_max_uptime = ${top_max_uptime}
 
         local_image    =
         local_md5      =
@@ -145,10 +174,10 @@ speed_md5=
           (?<comment0>\#.*)
 
           # boolean var
-          | (?<var_name0>verify|ftp|debug)    [^\S\n]* = [^\S\n]* (?<var_value0>[01])
+          | (?<var_name0>verify|fetch|reload|debug) [^\S\n]* = [^\S\n]* (?<var_value0>[01])
 
           # string var
-          | (?<var_name0>Image|RomFile|RomId|SpeedFile) [^\S\n]* = [^\S\n]* (?<var_value0>\S+)
+          | (?<var_name0>Image|RomFile|RomId|SpeedFile|MaxUptime) [^\S\n]* = [^\S\n]* (?<var_value0>\S+)
 
           # hex var
           | (?<var_name0>md5|RomMd5|SpeedMd5) [^\S\n]* = [^\S\n]* (?<var_value0>[0-9a-f]{32})
@@ -170,9 +199,13 @@ speed_md5=
                     [Assign]
                     local_verify = ${var_value0}
                 [ElseIf IgnoreCase,FromVariable=var_name0]
-                ftp
+                fetch
                     [Assign]
-                    local_ftp = ${var_value0}
+                    local_fetch = ${var_value0}
+                [ElseIf IgnoreCase,FromVariable=var_name0]
+                reload
+                    [Assign]
+                    local_reload = ${var_value0}
                 [ElseIf IgnoreCase,FromVariable=var_name0]
                 debug
                     [Assign]
@@ -185,6 +218,10 @@ speed_md5=
                 SpeedMd5
                     [Assign]
                     local_speed_md5 = ${var_value0}
+                [ElseIf IgnoreCase,FromVariable=var_name0]
+                MaxUptime
+                    [Assign]
+                    local_max_uptime = ${var_value0}
                 [ElseIf IgnoreCase,FromVariable=var_name0]
                 image
                     [Assign]
@@ -253,11 +290,13 @@ speed_md5=
         [If IgnoreCase,FromVariable=model]
         ${series}
             [Assign]
-            verify   = ${local_verify}
-            ftp      = ${local_ftp}
-            debug    = ${local_debug}
+            verify     = ${local_verify}
+            fetch      = ${local_fetch}
+            reload     = ${local_reload}
+            debug      = ${local_debug}
             speed_file = ${local_speed_file}
             speed_md5  = ${local_speed_md5}
+            max_uptime = ${local_max_uptime}
 
             image    = ${local_image}
             md5      = ${local_md5}
@@ -286,23 +325,6 @@ ${}
     IOS file: No format version setting
 [EndIf]
 
-[If Not,FromVariable=debug]
-0
-    [Print]
-    verify   = ${verify}
-    ftp      = ${ftp}
-    debug    = ${debug}
-    speed_file = ${speed_file}
-    speed_md5  = ${speed_md5}
-
-    image    = ${image}
-    md5      = ${md5}
-
-    rom_file = ${rom_file}
-    rom_id   = ${rom_id}
-    rom_md5  = ${rom_md5}
-[EndIf]
-
 [If Not,FromVariable=series]
 ${}
     [If FromVariable=matches]
@@ -327,12 +349,40 @@ ${}
     speed_file = ${top_speed_file}
 [EndIf]
 
+[If FromVariable=max_uptime]
+${}
+    # If no series entry matches inherit the global value
+    [Assign]
+    max_uptime = ${top_max_uptime}
+[EndIf]
+
+[If Not,FromVariable=debug]
+0
+    [Print]
+    verify     = ${verify}
+    fetch      = ${fetch}
+    reload     = ${reload}
+    debug      = ${debug}
+    speed_file = ${speed_file}
+    speed_md5  = ${speed_md5}
+    max_uptime = ${max_uptime}
+
+    image      = ${image}
+    md5        = ${md5}
+
+    rom_file   = ${rom_file}
+    rom_id     = ${rom_id}
+    rom_md5    = ${rom_md5}
+[EndIf]
+
 [Return]
-verify = ${verify}
-ftp    = ${ftp}
-debug  = ${debug}
+verify     = ${verify}
+fetch      = ${fetch}
+reload     = ${reload}
+debug      = ${debug}
 speed_file = ${speed_file}
 speed_md5  = ${speed_md5}
+max_uptime = ${max_uptime}
 
 image  = ${image}
 md5    = ${md5}

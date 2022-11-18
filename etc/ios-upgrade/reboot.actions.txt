@@ -1,12 +1,18 @@
 [Define]
 old_verify  = ${caller.old_verify}
 new_verify  = ${caller.new_verify}
+reload      = ${caller.reload}
+filesystem  = ${caller.filesystem}
+uptime_exceeded = ${caller.uptime_exceeded}
 
+old_path    = ${caller.old_path}
 new_file    = ${caller.new_file}
+new_md5     = ${caller.new_md5}
 have_image_file  = ${caller.have_image_file}
 valid_image = ${caller.valid_image}
 
 rom_file    = ${caller.rom_file}
+rom_md5     = ${caller.rom_md5}
 have_rom_file  = ${caller.have_rom_file}
 valid_rom   = ${caller.valid_rom}
 
@@ -26,11 +32,47 @@ valid_rom   = ${caller.valid_rom}
     [EndIf]
 [EndIf]
 
+# No need to verify old path if new file already verified and they are the same
+[If FromVariable=old_verify]
+1
+    [If FromVariable=new_verify]
+    0
+        [If FromVariable=old_path,Any]
+        ${new_file}
+        /${new_file}
+            [Assign]
+            old_verify = 0
+        [EndIf]
+    [EndIf]
+[EndIf]
+
+[If FromVariable=uptime_exceeded]
+1
+    [Print]
+    Excessive uptime. Preventative reboot to the old IOS image ${old_path}
+
+    # IOS.actions.txt already did a stat on ${old_path}
+    [Assign]
+    new_md5 =
+    new_file = ${old_path}
+    old_path = dummy
+    valid_image = 0
+    have_image_file = 1
+    new_verify = ${old_verify}
+    old_verify = 0
+
+    valid_rom = 1
+    have_rom_file = 1
+    rom_md5 = ?
+    rom_file = dummy
+[EndIf]
+
 [If Not,FromVariable=have_image_file]
 1
 
     [Error]
     Image File ${new_file} is not in flash. Please run the pre upgrade script (IOS-upgrade.pre) first
+
 [EndIf]
 
 [If Not,FromVariable=have_rom_file]
@@ -44,16 +86,11 @@ valid_rom   = ${caller.valid_rom}
 1
     [If Not,FromVariable=old_verify]
     0
-        # If we are only doing a ROM upgrade the old IOS is the same as the new
-        # So no need for what is then the same verify
-        [If Not,FromVariable=new_file]
-        ${caller.old_file}
-            # Also verify the old image since we might want to roll back
-            [Include File=verify.actions.txt]
-            argument: file    = ${caller.filesystem}:${caller.old_file}
-            argument: md5     =
-            argument: context = Verify failure for old image
-        [EndIf]
+        # Also verify the old image since we might want to roll back
+        [Include File=verify.actions.txt]
+        argument: file    = ${filesystem}:${old_path}
+        argument: md5     =
+        argument: context = Verify failure for old image
     [EndIf]
 [EndIf]
 
@@ -61,8 +98,8 @@ valid_rom   = ${caller.valid_rom}
 0
     # Verify the new image
     [Include File=verify.actions.txt]
-    argument: file    = ${caller.filesystem}:${new_file}
-    argument: md5     = ${caller.new_md5}
+    argument: file    = ${filesystem}:${new_file}
+    argument: md5     = ${new_md5}
     argument: context = Verify failure for new image
 
     [If Not,FromVariable=valid_rom]
@@ -71,33 +108,39 @@ valid_rom   = ${caller.valid_rom}
         ${}
             # Verify the new ROM
             [Include File=verify.actions.txt]
-            argument: file    = ${caller.filesystem}:${rom_file}
-            argument: md5     = ${caller.rom_md5}
+            argument: file    = ${filesystem}:${rom_file}
+            argument: md5     = ${rom_md5}
             argument: context = Verify failure for new ROM
         [EndIf]
     [EndIf]
 [EndIf]
 
 [Commands Single=True]
-copy run ${caller.filesystem}:config_${global.job_utc:%Y-%m-%dT%H:%M:%SZ}
+copy run ${filesystem}:config_${global.job_utc:%Y-%m-%dT%H:%M:%SZ}
 ${}
 ${}
 
 [If Not,FromVariable=valid_rom]
 1
     [Commands]
-    upgrade rom-monitor filename ${caller.filesystem}:${caller.rom_file} all
+    upgrade rom-monitor filename ${filesystem}:${rom_file} all
 [EndIf]
 
 [Configure]
 no boot system
-boot system ${caller.filesystem}:${new_file}
-boot system ${caller.filesystem}
+boot system flash ${filesystem}:${new_file}
+boot system flash
 
 [Apply]
 
-# pre.actions.txt already do a verify
-[Commands Single=True, Disconnect=True]
-reload /noverify
-${}
-${}
+[If FromVariable=reload]
+1
+    # pre.actions.txt already do a verify
+    [Commands Single=True, Disconnect=True]
+    reload /noverify
+    ${}
+    ${}
+[Else]
+    [Error]
+    Please do a manual reload (explicit setting reload=${reload})
+[EndIf]

@@ -4,9 +4,11 @@
 
 [Include File=prepare.actions.txt]
 define: verify
+define: reload
+define: uptime_exceeded
 define: filesystem
 
-define: old_file
+define: old_path
 define: new_file
 define: new_md5
 define: valid_image
@@ -18,9 +20,11 @@ define: valid_rom
 [Include File=reboot.actions.txt]
 argument: old_verify = ${verify}
 argument: new_verify = 0
+argument: reload
+argument: uptime_exceeded
 argument: filesystem
 
-argument: old_file
+argument: old_path
 argument: new_file
 argument: new_md5
 argument: have_image_file = 1

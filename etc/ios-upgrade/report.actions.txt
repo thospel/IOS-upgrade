@@ -26,10 +26,11 @@ argument: probe = 1
 
 define: series
 define: filesystem
-define: uptime
 define: speed_file
 define: speed_md5
-
+define: max_uptime
+define: uptime
+define: uptime_exceeded
 
 define: old_file
 define: new_file
@@ -72,6 +73,19 @@ ${}
     upgrade_firmware = No
 [EndIf]
 
+[If FromVariable=uptime_exceeded]
+1
+    [Assign]
+    uptime_exceeded = Yes
+[ElseIf FromVariable=uptime_exceeded]
+0
+    [Assign]
+    uptime_exceeded = No
+[Else]
+    [Error]
+    Assertion: Invalid uptime_exceeded=${uptime_exceeded}
+[EndIf]
+
 [If FromVariable=upgrade]
 No
     [Print FileFromVariable=noupgrade_file]
@@ -90,6 +104,7 @@ ${}
 Series:     ${series}
 FileSystem: ${filesystem}
 Uptime:     ${uptime}
+UpTooLong:  ${uptime_exceeded}
 ${}
 CurrentIOS: ${old_file}
 TargetIOS:  ${new_file}

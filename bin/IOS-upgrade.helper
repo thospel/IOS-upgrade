@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from subprocess import run
 import sys
 import os
@@ -17,7 +16,7 @@ DEVICE_APPLY = "/opt/Shell/tooling/device-apply/bin/device-apply"
 DEVICE_APPLY_NAME = "ios-upgrade"
 PACKAGE_VERSION = "1.0"
 PREFIX = "IOS-upgrade."
-VERSION_MIN = "1.5.24"
+VERSION_MIN = "1.5.25"
 IOS_TABLE = "cisco_ios.table.txt"
 ENV_IOS_TABLE    = "ios_table"
 ENV_ACTIONS_NAME = "actions_name"
@@ -51,23 +50,26 @@ if __name__=='__main__':
     os.environ[ENV_ACTIONS_NAME] = name
     os.environ[ENV_IOS_TABLE]   = str(Path(IOS_TABLE).resolve())
 
-    with TemporaryDirectory() as temp_dir:
-        result = run([DEVICE_APPLY_NAME,
-                      "--version-min", VERSION_MIN,
-                      "--no-verbose",
-                      "-W", temp_dir,
-                      "-A", str(CONFIG_DIR / "IOS.check_table.actions.txt"),
-                      os.devnull],
-                     executable = DEVICE_APPLY,
-                     text=True,
-                     capture_output=True)
-        if result.returncode:
-            print(red(result.stderr.strip() or result.stdout.strip() or "Unknown error"))
-            sys.exit(result.returncode if result.returncode > 0 else 1)
-
+    result = run([DEVICE_APPLY_NAME,
+                  "--version-min", VERSION_MIN,
+                  "--no-verbose",
+                  "-W", "-",
+                  "-A", str(CONFIG_DIR / "IOS.check_table.actions.txt"),
+                  os.devnull],
+                 executable = DEVICE_APPLY,
+                 text=True,
+                 capture_output=True)
+    if result.returncode:
+        print(red(result.stderr.strip() or result.stdout.strip() or "Unknown error"))
+        sys.exit(result.returncode if result.returncode > 0 else 1)
+    if name == "check":
+        extra_args = ["-W", "-"]
+    else:
+        extra_args = []
     os.execvp(DEVICE_APPLY,
               [DEVICE_APPLY_NAME,
                "--verbose",
                "--no-check-alone",
                "-A", str(CONFIG_DIR / ("%s.actions.txt" % name)),
+               *extra_args,
                *sys.argv[2:]])
