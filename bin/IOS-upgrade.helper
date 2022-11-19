@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-from pathlib import Path
-from subprocess import run
 import sys
 import os
+from pathlib import Path
+from subprocess import run
+from stat import S_ISREG
 
 import colorama		# type: ignore
 
@@ -36,8 +37,11 @@ def red(text: str) -> str:
 if __name__=='__main__':
     if len(sys.argv) > 1 and sys.argv[1] == "--version" or \
        len(sys.argv) > 2 and sys.argv[2] == "--version":
-        print(PACKAGE_VERSION)
-        sys.exit(0)
+            print(PACKAGE_VERSION)
+            sys.exit(0)
+
+    if len(sys.argv) < 2 or sys.argv[1].startswith("-"):
+        raise SystemExit(red("Attempt to call IOS-upgrade.helper directly. Please use one of the wrapper programs instead"))
 
     if len(sys.argv) > 2:
         if sys.argv[2] in ("--help", "-h"):
@@ -45,10 +49,28 @@ if __name__=='__main__':
                       [DEVICE_APPLY_NAME, "--help"])
 
     name = Path(sys.argv[1]).name
-    if name.startswith(PREFIX):
-        name = name[len(PREFIX):]
+    if not name.startswith(PREFIX):
+        raise SystemExit(red(f"Assertion: Wrapper script name {name!r} does not start with {PREFIX!r}"))
+    name = name[len(PREFIX):]
     os.environ[ENV_ACTIONS_NAME] = name
-    os.environ[ENV_IOS_TABLE]   = str(Path(IOS_TABLE).resolve())
+
+    # Make sure IOS_TABLE is usable. These tests are a race condition since the
+    # situation can have changed by the time of the actual usage, but that does
+    # not matter since that usage will still error in case of problems, it's
+    # just that these error will be a lot less clear
+    ios_table_path = Path(IOS_TABLE).resolve()
+    try:
+        stat = ios_table_path.stat()
+    except IOError as exc:
+        raise SystemExit(red(str(exc).replace(str(ios_table_path), IOS_TABLE))) from None
+    if not S_ISREG(stat.st_mode):
+        raise SystemExit(red(f"Path {IOS_TABLE!r} exists but is not a regular file"))
+    try:
+        with open(ios_table_path):
+            pass
+    except IOError as exc:
+        raise SystemExit(red(str(exc).replace(str(ios_table_path), IOS_TABLE))) from None
+    os.environ[ENV_IOS_TABLE]   = str(ios_table_path)
 
     result = run([DEVICE_APPLY_NAME,
                   "--version-min", VERSION_MIN,

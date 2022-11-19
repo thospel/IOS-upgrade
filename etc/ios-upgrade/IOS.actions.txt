@@ -1,7 +1,8 @@
-# Determizne target IOS
+# Determine target IOS
 
 [Define]
 fake = shell-test-cisco
+debug_truncate=
 filesystem=
 uptime=
 image=
@@ -31,7 +32,7 @@ show version | include ^[Ss]ystem image file is|_uptime is
 
 # Extract the actual system image name into variable image. So after this:
 #    filesystem = bootflash
-#    image =      asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext.
+#    image      = asr1000rp1-adventerprisek9.03.16.01a.S.155-3.S1a-ext.
 [If Not,Regex, IgnoreCase, FromVariable=version]
 System image file is "(?<full_image>.*)"
 
@@ -39,6 +40,16 @@ System image file is "(?<full_image>.*)"
     'show version' output does not contain 'System image file is "XXXX"'
 
 [Else]
+    [If Not,FromVariable=debug_truncate,Any]
+    ${}
+    0+
+        [If Regex,Anchor=Substring,FromVariable=full_image,DefineVariable=all]
+        ^.{63}
+            [Assign]
+            full_image = ${all}
+        [EndIf]
+    [EndIf]
+
     # Notice that we remove any leading / from the image name
     # Filesystem name can contain - (e.g. 'sup-bootdisk' on USHOUWTCMP650)
     [If Not,Regex,FromVariable=full_image,Anchor=Substring]
@@ -60,7 +71,7 @@ System image file is "(?<full_image>.*)"
 
         [If Not,FromVariable=stat]
         1
-            # Image Name could be truncated
+            # Image name not found. Maybe it was truncated to 63 characters..
 
             [If Regex,FromVariable=full_image]
             # Check for EXACTLY 63 characters.
@@ -86,29 +97,31 @@ System image file is "(?<full_image>.*)"
                 # recursively list the contents and our image is in a
                 # subdirectory. In that case we will (incorrectly) error out
                 # Fortunately this does not seem to happen on our network
+                # If needed we can support this by using `dir file*`, but `dir`
+                # is (currently) not allowed for a pure RO user
 
                 [While Regex,FromVariable=dir]
-                # Don't check for the specific filesystem
+                # Don't check for the specific filesystem. it can differ
                 \s*\d+\s+.*\s+(?:/[^/]+/|)(?<full>${image}[^/]*)
                     [If FromVariable=complete]
                     ${}
                         [Assign]
                         complete=${full}
                     [ElseIf Not,FromVariable=complete]
-                    # Yes, we sometimes get multiple identical entries in flash
+                    # Sigh, we sometimes get multiple identical entries in flash
                     ${full}
                         [Error]
                         Multiple matches for file ${image}: ${complete} and ${full}
                     [EndIf]
                 [Else]
                     [Error]
-                    Could not not find (possible truncated) image file ${filesystem}${image}
+                    Could not not find (possible truncated) IOS image file ${filesystem}${image}
                 [EndWhile]
                 [Assign]
                 image = ${complete}
             [Else]
                 [Error]
-                Could not find image file ${filesystem}${image}
+                Could not find IOS image file ${filesystem}${image}
             [EndIf]
         [EndIf]
     [EndIf]
@@ -116,7 +129,7 @@ System image file is "(?<full_image>.*)"
 
 # Fake image on device named 'shell-test-cisco' for development
 [If FromVariable=device_name]
-shell-test-cisco
+${fake}
     [Assign]
     filesystem = flash
     image =      c3900-universalk9-mz.SPA.156-3.M8.bin
@@ -129,7 +142,7 @@ shell-test-cisco
 .*\.bin
 
   [Error]
-  Image "${image}" does not end in .bin. This is not supported (yet)
+  IOS image "${image}" does not end in .bin. This is not supported (yet)
 [EndIf]
 
 # Parse something like

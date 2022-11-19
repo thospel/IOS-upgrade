@@ -71,7 +71,7 @@ valid_rom   = ${caller.valid_rom}
 1
 
     [Error]
-    Image File ${new_file} is not in flash. Please run the pre upgrade script (IOS-upgrade.pre) first
+    Image File ${new_file} is not in flash. Please run the pre upgrade script (IOS-upgrade.prepare) first
 
 [EndIf]
 
@@ -79,7 +79,7 @@ valid_rom   = ${caller.valid_rom}
 1
 
     [Error]
-    ROM File ${rom_file} is not in flash. Please run the pre upgrade script (IOS-upgrade.pre) first
+    ROM File ${rom_file} is not in flash. Please run the pre upgrade script (IOS-upgrade.prepare) first
 [EndIf]
 
 [If Not,FromVariable=valid_image]
@@ -135,12 +135,15 @@ boot system flash
 
 [If FromVariable=reload]
 1
-    # pre.actions.txt already do a verify
+    # prepare.actions.txt already does a verify
     [Commands Single=True, Disconnect=True]
     reload /noverify
     ${}
     ${}
+
+    [Print]
+    Connection lost. Reload in progress
 [Else]
     [Error]
-    Please do a manual reload (explicit setting reload=${reload})
+    Please do a manual 'reload /noverify' (explicit setting reload=${reload})
 [EndIf]

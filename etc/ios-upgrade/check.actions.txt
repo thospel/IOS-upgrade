@@ -16,28 +16,37 @@ define: rom_md5
 define: rom_id
 define: old_rom_id
 define: valid_rom
-
-# Is the image upgrade done ?
-[If Not, FromVariable=valid_image]
-1
-
-  [Error]
-  Not running IOS image ${new_file} (instead running ${old_file})
-
-[EndIf]
-
-[If Not,FromVariable=have_image_file]
-1
-
-  [Error]
-  Running ${new_file} but the file is not in flash.
-[EndIf]
+define: message =
 
 # Is the ROM upgrade done ?
 [If Not, FromVariable=valid_rom]
 1
 
-  [Error]
-  Not running ROM ${rom_id} (instead running ${old_rom_id})
+    [Assign]
+    # Not running ROM ${rom_id} (instead running ${old_rom_id})
+    message = ${message} ROM update needed.
 
+[EndIf]
+
+# Is the image upgrade done ?
+[If Not, FromVariable=valid_image]
+1
+
+    [Assign]
+    # Not running IOS image ${new_file} (instead running ${old_file})
+    message = ${message} IOS update needed.
+
+[ElseIf Not,FromVariable=have_image_file]
+1
+
+    [Assign]
+    # Running ${new_file} but the file is not in flash.
+    message = ${message} Currently running IOS not in flash
+
+[EndIf]
+
+[If Regex,FromVariable=message]
+\s*(?<error>.*\S)\s*
+    [Error]
+    ${error}
 [EndIf]
