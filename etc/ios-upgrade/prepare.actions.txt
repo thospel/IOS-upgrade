@@ -2,100 +2,18 @@
 
 # Upload a new image
 
-[Include File=IOS.actions.txt]
-argument: probe = 0
+[Include File=transfer.actions.txt]
+define: message
 
-define: debug
-define: verify
-define: fetch
-define: reload
-define: filesystem
-define: uptime_exceeded
-
-define: old_path
-define: old_file
-define: new_file
-define: new_md5
-define: have_image_file
-define: valid_image
-
-define: rom_file
-define: rom_md5
-define: have_rom_file
-define: valid_rom
-
-[If Not,FromVariable=debug]
-0
-  [Print]
-    proto = ${global.fileserver_protocol}
-    host  = ${global.fileserver_host}
-    path  = ${global.fileserver_path}
-    user  = ${global.fileserver_user}
-    pass  = ${global.fileserver_password}
+# lstrip message
+[If Regex,FromVariable=message,DotAll,Anchor=Full]
+\s*(?<lstripped>.*)
+    [Assign]
+    message = ${lstripped}
+[Else]
+    [Bug]
+    Impossible non-match on '${message}'
 [EndIf]
 
-[Scope]
-    [If Not,FromVariable=have_image_file]
-    1
-        [If FromVariable=fetch]
-        0
-            [Error]
-            Need to fetch IOS image ${filesystem}:${new_file} but fetch=${fetch} (not 1)
-        [Else]
-            [Include File=fileserver.actions.txt]
-            argument: filesystem
-            argument: file = ${new_file}
-        [EndIf]
-    [EndIf]
-
-    [If Not,FromVariable=verify]
-    0
-        # Verify image
-        [Include File=verify.actions.txt]
-        argument: file    = ${filesystem}:${new_file}
-        argument: md5     = ${new_md5}
-        argument: context = Image verify failure
-    [EndIf]
-[EndScope]
-
-[If Not,FromVariable=valid_rom]
-1
-    [If Not,FromVariable=have_rom_file]
-    1
-        [If FromVariable=fetch]
-        0
-            [Error]
-            Need to fetch ROM ${filesystem}:${rom_file} but fetch=${fetch} (not 1)
-        [Else]
-            [Include File=fileserver.actions.txt]
-            argument: filesystem
-            argument: file = ${rom_file}
-        [EndIf]
-    [EndIf]
-
-    [If Not,FromVariable=verify]
-    0
-        # Verify image
-        [Include File=verify.actions.txt]
-        argument: file    = ${filesystem}:${rom_file}
-        argument: md5     = ${rom_md5}
-        argument: context = ROM verify failure
-    [EndIf]
-[EndIf]
-
-[Return]
-verify       = ${verify}
-reload       = ${reload}
-debug        = ${debug}
-filesystem   = ${filesystem}
-uptime_exceeded = ${uptime_exceeded}
-
-old_path     = ${old_path}
-old_file     = ${old_file}
-new_file     = ${new_file}
-new_md5      = ${new_md5}
-valid_image  = ${valid_image}
-
-rom_file     = ${rom_file}
-rom_md5      = ${rom_md5}
-valid_rom    = ${valid_rom}
+[OK]
+${message}

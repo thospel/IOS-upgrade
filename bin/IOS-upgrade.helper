@@ -17,7 +17,7 @@ DEVICE_APPLY = "/opt/Shell/tooling/device-apply/bin/device-apply"
 DEVICE_APPLY_NAME = "ios-upgrade"
 PACKAGE_VERSION = "1.0"
 PREFIX = "IOS-upgrade."
-VERSION_MIN = "1.5.25"
+VERSION_MIN = "1.5.33"
 IOS_TABLE = "cisco_ios.table.txt"
 ENV_IOS_TABLE    = "ios_table"
 ENV_ACTIONS_NAME = "actions_name"
@@ -35,6 +35,8 @@ def red(text: str) -> str:
     return result
 
 if __name__=='__main__':
+    # Also need to support --verion at sys.argv[1] since make-python-rpm will
+    # call the helper script directly
     if len(sys.argv) > 1 and sys.argv[1] == "--version" or \
        len(sys.argv) > 2 and sys.argv[2] == "--version":
             print(PACKAGE_VERSION)

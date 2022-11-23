@@ -19,6 +19,7 @@ define: valid_image
 
 define: rom_file
 define: rom_md5
+define: rom_id
 define: valid_rom
 define: have_rom_file
 
@@ -37,5 +38,28 @@ argument: valid_image
 
 argument: rom_file
 argument: rom_md5
+argument: rom_id
 argument: have_rom_file
 argument: valid_rom
+
+define: message
+define: progress
+
+# lstrip message
+[If Regex,FromVariable=message,DotAll,Anchor=Full]
+\s*(?<lstripped>.*)
+    [Assign]
+    message = ${lstripped}
+[Else]
+    [Bug]
+    Impossible non-match on '${message}'
+[EndIf]
+
+[If FromVariable=progress]
+0
+    [OK]
+    ${message}
+[Else]
+    [Progress]
+    ${message}
+[EndIf]

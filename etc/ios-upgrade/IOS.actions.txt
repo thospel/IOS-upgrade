@@ -255,8 +255,9 @@ ${fake}
         have_image_file = ${stat}
 
         # Is an upgrade needed ?
-        [If Regex, FromVariable=new_file]
-        ${old_file}
+        [If Regex, FromVariable=old_file,Any]
+        ${new_file}
+        /${new_file}
             [Assign]
             valid_image=1
         [Else]

@@ -1,0 +1,139 @@
+# Do verify but just return the result
+[Define]
+file = ${caller.file}
+md5  = ${caller.md5}
+
+# Sanity check. File should not be empty
+[If FromVariable=file]
+${}
+    [Bug]
+    Assertion: Empty file name for verify
+[EndIf]
+
+# Sanity check. File should have filesystem
+[If Not,Regex,FromVariable=file,Anchor=Substring]
+:
+    [Bug]
+    Assertion: File without filesystem for verify: ${file}
+[EndIf]
+
+# Sanity check. File should not end on :
+[If Regex,FromVariable=file,Anchor=Substring]
+:$
+    [Bug]
+    Assertion: Only filesystem for verify: ${file}
+[EndIf]
+
+[If FromVariable=md5]
+${}
+    # We don't have a target md5, so try to use an embedded verify (slow)
+    [Commands DefineVariable=verify_result,RepeatMax=10,RepeatReplace=.]
+    verify ${file}
+
+    # Get last non-empty line from verification result
+    [If Regex,Anchor=Substring,FromVariable=verify_result]
+    (?<last_line>.+)\n*\Z
+        [Assign]
+        verify_result=${last_line}
+    [Else]
+        [Bug]
+        Could not parse verify result ${verify_result}
+    [EndIf]
+
+    # If the verify failed we will bail out
+    [If Not,Regex,IgnoreCase,Anchor=Substring,Any,FromVariable=verify_result]
+    signature successfully verified
+    hash verification successful
+        [Return]
+        verify_error = ${verify_result}
+    [EndIf]
+[Else]
+    # We DO have a target md5, so only verify the file (fast)
+    [Commands DefineVariable=verify_result,RepeatMax=10,RepeatReplace=.]
+    verify /md5 ${file}
+
+    # Get last non-empty line from verification result
+    [If Regex,Anchor=Substring,FromVariable=verify_result]
+    (?<last_line>.+)\n*\Z
+        [Assign]
+        verify_result=${last_line}
+    [Else]
+        [Bug]
+        Could not parse verify result ${verify_result}
+    [EndIf]
+
+    # If the verify failed we will bail out
+    [If Regex,Anchor=Substring,FromVariable=verify_result]
+    verify\s.*=\s*(?<got_md5>\S+)
+        [If Not,IgnoreCase,FromVariable=md5]
+        ${got_md5}
+            [Return]
+            verify_error = md5(${file}) = ${got_md5}, expected ${md5}
+        [EndIf]
+    [Else]
+        [Return]
+        verify_error = ${verify_result}
+    [EndIf]
+[EndIf]
+
+[Return]
+verify_error =
+
+# Only Comments after this point
+# ==============================================================================
+
+[Comment]
+Sample verify output (without /md5):
+
+Verifying file integrity of bootflash:asr1002x-universalk9.17.03.05.SPA.bin.
+Embedded Hash   SHA1 : 794828D3A9E415CA27B3772FCC886161424DFA0B
+Computed Hash   SHA1 : 794828D3A9E415CA27B3772FCC886161424DFA0B
+Starting image verification
+Hash Computation:    100%Done!
+Computed Hash   SHA2: 7662e104160ea979d0a67866a7fa3148
+                      8085ed3aac3110561b1e26dfd46c44fe
+                      9dfcb6f8a232b976d593999d59eaf1d3
+                      f02e141b46ae07c8a4a6b9b53eb19c99
+
+Embedded Hash   SHA2: 7662e104160ea979d0a67866a7fa3148
+                      8085ed3aac3110561b1e26dfd46c44fe
+                      9dfcb6f8a232b976d593999d59eaf1d3
+                      f02e141b46ae07c8a4a6b9b53eb19c99
+
+Digital signature successfully verified in file bootflash:asr1002x-universalk9.17.03.05.SPA.bin
+
+[Comment]
+Sample verify output (without /md5):
+
+Verifying file integrity of bootflash:asr1002x-universalk9.03.16.01a.S.155-3.S1a-ext.SPA.bin.
+Embedded Hash   SHA1 : 70F01258951858923ECF751EBC41F041CB54C576
+Computed Hash   SHA1 : 70F01258951858923ECF751EBC41F041CB54C576
+Starting image verification
+Hash Computation:    100%Done!
+Computed Hash   SHA2: fd26636b8ac2993274c1b57c205460a8
+                      10e1d1c5e9c6b4071fdc2dc2e226593e
+                      3c1c8b95b0bc461c36419ca10b5d411d
+                      86fe87f16bd06ed9e8e8eef8a1a1b174
+
+Embedded Hash   SHA2: fd26636b8ac2993274c1b57c205460a8
+                      10e1d1c5e9c6b4071fdc2dc2e226593e
+                      3c1c8b95b0bc461c36419ca10b5d411d
+                      86fe87f16bd06ed9e8e8eef8a1a1b174
+
+Digital signature successfully verified in file bootflash:asr1002x-universalk9.03.16.01a.S.155-3.S1a-ext.SPA.bin
+
+Embedded hash verification successful.
+
+[Comment]
+Sample failing verify output (without /md5):
+
+Verifying file integrity of bootflash:asr1002x-universalk9.17.03.05.SPA.bin.
+Embedded Hash   SHA1 : 794828D3A9E415CA27B3772FCC886161424DFA0B
+Computed Hash   SHA1 : A3B8A8A07C92DE1A0E478435FAD135216A453B8A
+Embedded hash verification failed for file bootflash:asr1002x-universalk9.17.03.05.SPA_BAD.bin.
+
+[Comment]
+Sample verify /md5 output:
+
+.Done!
+verify /md5 (bootflash:asr1000-rommon.173-1r.SPA.pkg) = 99589534e8e6b32fe43584f03f4de40e

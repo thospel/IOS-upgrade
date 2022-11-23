@@ -1,0 +1,184 @@
+#!/opt/Shell/tooling/device-apply/bin/device-apply -A
+
+# Upload a new image
+
+[Include File=IOS.actions.txt]
+argument: probe = 0
+
+define: debug
+define: verify
+define: fetch
+define: reload
+define: filesystem
+define: uptime_exceeded
+
+define: old_path
+define: old_file
+define: new_file
+define: new_md5
+define: have_image_file
+define: valid_image
+
+define: rom_file
+define: rom_id
+define: rom_md5
+define: have_rom_file
+define: valid_rom
+
+[Define]
+verify_image = ${verify}
+verify_rom   = ${verify}
+overwrite_image = 0
+overwrite_rom   = 0
+message =
+
+[If Not,FromVariable=debug]
+0
+  [Print]
+    proto = ${global.fileserver_protocol}
+    host  = ${global.fileserver_host}
+    path  = ${global.fileserver_path}
+    user  = ${global.fileserver_user}
+    pass  = ${global.fileserver_password}
+[EndIf]
+
+[Scope]
+    [If FromVariable=have_image_file]
+    1
+        [If Not,FromVariable=verify_image]
+        0
+            # We already have the file. Check that it isn't damaged, so that if
+            # it is damaged we can start a retransfer
+            [Include File=verify_test.actions.txt]
+            argument: file    = ${filesystem}:${new_file}
+            argument: md5     = ${new_md5}
+
+            define: verify_error
+
+            [If FromVariable=verify_error]
+            ${}
+                [Assign]
+                verify_image=0
+            [Else]
+                [If FromVariable=valid_image]
+                1
+                    [Error]
+                    No IOS upgrade needed but current IOS image is damaged: ${verify_error}
+                [EndIf]
+
+                [Assign]
+                message = ${message} New IOS file was damaged.
+                have_image_file=0
+                overwrite_image=1
+            [EndIf]
+        [EndIf]
+    [EndIf]
+
+    [If Not,FromVariable=have_image_file]
+    1
+        [If FromVariable=fetch]
+        0
+            [Error]
+            Need to fetch IOS image ${filesystem}:${new_file} but fetch=${fetch} (not 1)
+        [Else]
+            [Include File=fileserver.actions.txt]
+            argument: filesystem
+            argument: file = ${new_file}
+            argument: overwrite = ${overwrite_image}
+        [EndIf]
+
+        [Assign]
+        message = ${message} Fetched new IOS file.
+    [Else]
+        [Assign]
+        message = ${message} Already had IOS file.
+    [EndIf]
+
+    [If Not,FromVariable=verify_image]
+    0
+        # Verify image
+        [Include File=verify.actions.txt]
+        argument: file    = ${filesystem}:${new_file}
+        argument: md5     = ${new_md5}
+        argument: context = Image verify failure
+    [EndIf]
+[EndScope]
+
+[If Not,FromVariable=valid_rom]
+1
+    [If FromVariable=have_rom_file]
+    1
+        [If Not,FromVariable=verify_rom]
+        0
+            # We already have the file. Check that it isn't damaged, so that if
+            # it is damaged we can start a retransfer
+            [Include File=verify_test.actions.txt]
+            argument: file    = ${filesystem}:${rom_file}
+            argument: md5     = ${rom_md5}
+
+            define: verify_error
+
+            [If FromVariable=verify_error]
+            ${}
+                [Assign]
+                verify_rom=0
+            [Else]
+                [Assign]
+                message = ${message} ROM file was damaged.
+                have_rom_file=0
+                overwrite_rom=1
+            [EndIf]
+        [EndIf]
+    [EndIf]
+
+    [If Not,FromVariable=have_rom_file]
+    1
+        [If FromVariable=fetch]
+        0
+            [Error]
+            Need to fetch ROM ${filesystem}:${rom_file} but fetch=${fetch} (not 1)
+        [Else]
+            [Include File=fileserver.actions.txt]
+            argument: filesystem
+            argument: file = ${rom_file}
+            argument: overwrite = ${overwrite_rom}
+        [EndIf]
+
+        [Assign]
+        message = ${message} Fetched ROM file.
+    [Else]
+        [Assign]
+        message = ${message} Already had ROM file.
+    [EndIf]
+
+    [If Not,FromVariable=verify_rom]
+    0
+        # Verify image
+        [Include File=verify.actions.txt]
+        argument: file    = ${filesystem}:${rom_file}
+        argument: md5     = ${rom_md5}
+        argument: context = ROM verify failure
+    [EndIf]
+[Else]
+    [Assign]
+    message = ${message} ROM file not needed.
+[EndIf]
+
+[Return]
+verify       = ${verify}
+reload       = ${reload}
+debug        = ${debug}
+filesystem   = ${filesystem}
+uptime_exceeded = ${uptime_exceeded}
+message      = ${message}
+
+old_path     = ${old_path}
+old_file     = ${old_file}
+new_file     = ${new_file}
+new_md5      = ${new_md5}
+valid_image  = ${valid_image}
+
+rom_file     = ${rom_file}
+rom_id       = ${rom_id}
+rom_md5      = ${rom_md5}
+valid_rom    = ${valid_rom}

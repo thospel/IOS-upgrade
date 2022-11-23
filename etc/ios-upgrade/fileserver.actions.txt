@@ -1,10 +1,23 @@
+[Define Variable=newline,Single]
+${}
+${}
+
+[Define]
+overwrite = ${caller.overwrite}
+# Press enter 3 times to confirm user/pass/path
+confirm = ${newline}${newline}${newline}
+
+[If Not,FromVariable=overwrite]
+0
+    # Need to press enter one more time to confirm overwrite
+    [Assign]
+    confirm = ${confirm}${newline}
+[EndIf]
+
 [Commands Single, DefineVariable=fileserver_result]
 copy ${global.fileserver_url}${caller.file} ${caller.filesystem}:
 # Press enter 3 times to confirm user/pass/path
-${}
-${}
-${}
-${}
+${confirm}
 
 [If Regex,FromVariable=fileserver_result]
 (?<transfer_line>(?<size>\d+) bytes copied.*)

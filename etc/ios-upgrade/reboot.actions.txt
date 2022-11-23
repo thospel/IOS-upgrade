@@ -13,8 +13,11 @@ valid_image = ${caller.valid_image}
 
 rom_file    = ${caller.rom_file}
 rom_md5     = ${caller.rom_md5}
+rom_id      = ${caller.rom_id}
 have_rom_file  = ${caller.have_rom_file}
 valid_rom   = ${caller.valid_rom}
+
+message=
 
 # Is an upgrade needed ?
 [If FromVariable=valid_image]
@@ -23,11 +26,13 @@ valid_rom   = ${caller.valid_rom}
     1
         [If FromVariable=rom_file]
         ${}
-            [Error]
-            Already running Image ${new_file}
+            [Return]
+            message = ${message} No reload (Already running target IOS)
+            progress = 0
         [Else]
-            [Error]
-            Already running Image ${new_file} and ROM ${rom_file}
+            [Return]
+            message = ${message} No reload (Already running target IOS and ROM)
+            progress = 0
         [EndIf]
     [EndIf]
 [EndIf]
@@ -37,9 +42,8 @@ valid_rom   = ${caller.valid_rom}
 1
     [If FromVariable=new_verify]
     0
-        [If FromVariable=old_path,Any]
-        ${new_file}
-        /${new_file}
+        [If FromVariable=valid_image]
+        1
             [Assign]
             old_verify = 0
         [EndIf]
@@ -51,10 +55,13 @@ valid_rom   = ${caller.valid_rom}
     [Print]
     Excessive uptime. Preventative reboot to the old IOS image ${old_path}
 
+    # ${message} is set later when we change the config
+
     # IOS.actions.txt already did a stat on ${old_path}
     [Assign]
     new_md5 =
     new_file = ${old_path}
+    # Avoid accidents
     old_path = dummy
     valid_image = 0
     have_image_file = 1
@@ -64,7 +71,8 @@ valid_rom   = ${caller.valid_rom}
     valid_rom = 1
     have_rom_file = 1
     rom_md5 = ?
-    rom_file = dummy
+    # Needs to be empty to avoid "No ROM upgrade needed" message
+    rom_file =
 [EndIf]
 
 [If Not,FromVariable=have_image_file]
@@ -124,6 +132,12 @@ ${}
 1
     [Commands]
     upgrade rom-monitor filename ${filesystem}:${rom_file} all
+
+    [Assign]
+    message = ${message} Upgraded ROM.
+[ElseIf Not,FromVariable=rom_file]
+${}
+    message = ${message} No ROM upgrade needed.
 [EndIf]
 
 [Configure]
@@ -132,6 +146,25 @@ boot system flash ${filesystem}:${new_file}
 boot system flash
 
 [Apply]
+
+[If Not,FromVariable=valid_image]
+1
+    [If FromVariable=uptime_exceeded]
+    1
+        [If Not,FromVariable=message]
+        ${}
+            # message should be empty here since we should skip all actions
+            [Bug]
+            Unexpected alreade prepared message:${message}
+        [EndIf]
+
+        [Assign]
+        message = ${message} Excessive uptime. Set reload to old IOS
+    [Else]
+        [Assign]
+        message = ${message} Set reload to new IOS.
+    [EndIf]
+[EndIf]
 
 [If FromVariable=reload]
 1
@@ -143,7 +176,12 @@ boot system flash
 
     [Print]
     Connection lost. Reload in progress
+
+    [Return]
+    message = ${message} Reload in progress
+    progress = 1
 [Else]
-    [Error]
-    Please do a manual 'reload /noverify' (explicit setting reload=${reload})
+    [Return]
+    message = ${message} Do a manual 'reload /noverify' (setting reload=${reload})
+    progress = 1
 [EndIf]

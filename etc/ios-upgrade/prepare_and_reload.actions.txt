@@ -2,7 +2,7 @@
 
 # Fetch image and Reboot to new IOS
 
-[Include File=prepare.actions.txt]
+[Include File=transfer.actions.txt]
 define: verify
 define: reload
 define: uptime_exceeded
@@ -15,7 +15,10 @@ define: valid_image
 
 define: rom_file
 define: rom_md5
+define: rom_id
 define: valid_rom
+
+define: message_transfer = ${return.message}
 
 [Include File=reboot.actions.txt]
 argument: old_verify = ${verify}
@@ -32,5 +35,28 @@ argument: valid_image
 
 argument: rom_file
 argument: rom_md5
+argument: rom_id
 argument: have_rom_file   = 1
 argument: valid_rom
+
+define: progress
+define: message = ${message_transfer}${return.message}
+
+# lstrip message
+[If Regex,FromVariable=message,DotAll,Anchor=Full]
+\s*(?<lstripped>.*)
+    [Assign]
+    message = ${lstripped}
+[Else]
+    [Bug]
+    Impossible non-match on '${message}'
+[EndIf]
+
+[If FromVariable=progress]
+0
+    [OK]
+    ${message}
+[Else]
+    [Progress]
+    ${message}
+[EndIf]
