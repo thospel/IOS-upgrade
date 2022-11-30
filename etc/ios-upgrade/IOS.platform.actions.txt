@@ -85,5 +85,5 @@ ${} (?<firmwares0>\S+) ${}
 [EndIf]
 
 [Return]
-slots = ${slots}
+slots
 firmware = ${firmwares}

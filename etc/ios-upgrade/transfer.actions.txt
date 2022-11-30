@@ -165,20 +165,20 @@ message =
 [EndIf]
 
 [Return]
-verify       = ${verify}
-reload       = ${reload}
-debug        = ${debug}
-filesystem   = ${filesystem}
-uptime_exceeded = ${uptime_exceeded}
-message      = ${message}
+verify
+reload
+debug
+filesystem
+uptime_exceeded
+message
 
-old_path     = ${old_path}
-old_file     = ${old_file}
-new_file     = ${new_file}
-new_md5      = ${new_md5}
-valid_image  = ${valid_image}
+old_path
+old_file
+new_file
+new_md5
+valid_image
 
-rom_file     = ${rom_file}
-rom_id       = ${rom_id}
-rom_md5      = ${rom_md5}
-valid_rom    = ${valid_rom}
+rom_file
+rom_id
+rom_md5
+valid_rom

@@ -324,30 +324,30 @@ ${fake}
     [EndIf]
 
     [Return]
-    debug        = ${debug}
-    verify       = ${verify}
-    fetch        = ${fetch}
-    reload       = ${reload}
-    speed_file   = ${speed_file}
-    speed_md5    = ${speed_md5}
-    max_uptime   = ${max_uptime}
+    debug
+    verify
+    fetch
+    reload
+    speed_file
+    speed_md5
+    max_uptime
 
-    series       = ${series}
-    filesystem   = ${filesystem}
-    uptime       = ${uptime}
-    uptime_exceeded = ${uptime_exceeded}
+    series
+    filesystem
+    uptime
+    uptime_exceeded
 
-    old_file     = ${old_file}
+    old_file
     old_path     = ${prefix}${old_path}
-    new_file     = ${new_file}
-    new_md5      = ${new_md5}
-    have_image_file = ${have_image_file}
-    valid_image  = ${valid_image}
+    new_file
+    new_md5
+    have_image_file
+    valid_image
 
-    old_rom_id   = ${old_rom_id}
-    rom_file     = ${rom_file}
-    rom_id       = ${rom_id}
-    rom_md5      = ${rom_md5}
-    have_rom_file = ${have_rom_file}
-    valid_rom    = ${valid_rom}
+    old_rom_id
+    rom_file
+    rom_id
+    rom_md5
+    have_rom_file
+    valid_rom
 [EndIf]

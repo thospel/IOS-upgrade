@@ -21,6 +21,7 @@ ${}
 [Include File=fileserver.actions.txt]
 argument: filesystem
 argument: file
+argument: overwrite=0
 
 define: speed
 
@@ -39,4 +40,4 @@ ${}
 ${}
 
 [Return]
-speed = ${speed}
+speed

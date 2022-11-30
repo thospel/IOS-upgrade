@@ -117,7 +117,7 @@ ${}
 Upgrade: ${upgrade}
 
 [Return]
-report_file = ${report_file}
-filesystem = ${filesystem}
-speed_file = ${speed_file}
-speed_md5  = ${speed_md5}
+report_file
+filesystem
+speed_file
+speed_md5

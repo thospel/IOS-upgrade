@@ -376,17 +376,17 @@ ${}
 [EndIf]
 
 [Return]
-verify     = ${verify}
-fetch      = ${fetch}
-reload     = ${reload}
-debug      = ${debug}
-speed_file = ${speed_file}
-speed_md5  = ${speed_md5}
-max_uptime = ${max_uptime}
+verify
+fetch
+reload
+debug
+speed_file
+speed_md5
+max_uptime
 
-image  = ${image}
-md5    = ${md5}
+image
+md5
 
-rom_file = ${rom_file}
-rom_id = ${rom_id}
-rom_md5  = ${rom_md5}
+rom_file
+rom_id
+rom_md5

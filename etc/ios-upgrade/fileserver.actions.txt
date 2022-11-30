@@ -24,8 +24,8 @@ ${confirm}
     [If Regex,FromVariable=transfer_line,Anchor=Substring]
     \(\s*(?<speed>\d+)\s+bytes/sec\)$
         [Return]
-        size  = ${size}
-        speed = ${speed}
+        size
+        speed
     [Else]
         [Error]
         Cannot parse file transfer message '${transfer_line}'
