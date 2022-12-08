@@ -1,4 +1,5 @@
 [Define]
+fake        = ${caller.fake}
 old_verify  = ${caller.old_verify}
 new_verify  = ${caller.new_verify}
 reload      = ${caller.reload}
@@ -121,6 +122,12 @@ message=
             argument: context = Verify failure for new ROM
         [EndIf]
     [EndIf]
+[EndIf]
+
+[If Not,FromVariable=fake,Anchor=FullString]
+${}
+    [OK]
+    Aborting fake device
 [EndIf]
 
 [Commands Single=True]

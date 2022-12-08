@@ -1,4 +1,5 @@
 [Define]
+empty=
 probe = ${caller.probe}
 
 [Commands DefineVariable=platform,IgnoreError]
@@ -37,7 +38,7 @@ Slot \s+ CPLD \s+ Version \s+ Firmware \s+ Version \n
     (?<other>.+)
 
         [Assign]
-        other=${other|}
+        other=${other or empty}
 
         [If Not,FromVariable=other]
         ${}

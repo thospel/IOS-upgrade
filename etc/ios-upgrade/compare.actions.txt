@@ -1,0 +1,82 @@
+# This is extremely silly, we implement compare using loops and regex
+# This will become completely useless once we implement real expression support
+
+[Define]
+left   = ${caller.left}
+right  = ${caller.right}
+digits = 0123456789
+dots   =
+
+# Make sure they are integers
+[If Not,Regex,FromVariable=left,Anchor=FullString]
+0|[1-9]\d*
+    [Error]
+    '${left}' is not an integer
+[EndIf]
+
+[If Not,Regex,FromVariable=right,Anchor=FullString]
+0|[1-9]\d*
+    [Error]
+    '${right}' is not an integer
+[EndIf]
+
+# Convert left to a same length string of dots
+[While Regex,FromVariable=left,Anchor=Substring]
+.
+    [Assign]
+    dots = ${dots}.
+[EndWhile]
+
+[If Not,Regex,FromVariable=right,Substitute=Literal,Anchor=Substring]
+^${dots}(?<more>.?)
+    # right is is shorter than left, so left > right
+    [Return]
+    cmp = >
+[ElseIf Not,FromVariable=more]
+${}
+    # right is longer than left, so left < right
+    [Return]
+    cmp = <
+[ElseIf FromVariable=right]
+${left}
+    # left and right are identical, so self == right
+    [Return]
+    cmp = ==
+[EndIf]
+
+# Lengths are equal
+[While Regex,FromVariable=left,DefineVariable=l0,Anchor=Substring]
+.
+    [If Not,Regex,FromVariable=right]
+    (?<r0>.)(?<old_rest>.*)
+        [Bug]
+        Failed to sync progress on equal length strings
+    [Else]
+        [Assign]
+        right=${old_rest}
+
+        # Debug
+        # [Print]
+        # l0=${l0} r0=${r0}
+
+        # l0 and r0 are single digits we need to compare
+        # First find each of them in the digits
+        [If Regex,FromVariable=digits,Anchor=Substring]
+        ${l0}.*${r0}
+            # l0 < r0
+            [Return]
+            cmp = <
+        [ElseIf Regex,FromVariable=digits,Anchor=Substring]
+        ${r0}.*${l0}
+            # l0 > r0
+            [Return]
+            cmp = >
+        [ElseIf Not,FromVariable=l0]
+        ${r0}
+            [Bug]
+            Digit ${l0} is neither bigger not smaller than ${r0}
+        [EndIf]
+    [EndIf]
+[EndWhile]
+[Bug]
+All digits are equal but the numbers are not

@@ -5,12 +5,15 @@
 [Include File=IOS.actions.txt]
 argument: probe = 0
 
+define: fake
 define: debug
 define: verify
 define: fetch
 define: reload
 define: filesystem
 define: uptime_exceeded
+define: speed_file
+define: speed_md5
 
 define: old_path
 define: old_file
@@ -31,6 +34,7 @@ verify_rom   = ${verify}
 overwrite_image = 0
 overwrite_rom   = 0
 message =
+urls_sorted =
 
 [If Not,FromVariable=debug]
 0
@@ -81,10 +85,19 @@ message =
             [Error]
             Need to fetch IOS image ${filesystem}:${new_file} but fetch=${fetch} (not 1)
         [Else]
-            [Include File=fileserver.actions.txt]
+            [Include File=fileserver_speed.actions.txt]
+            argument: urls = ${urls_sorted}
+            argument: speed_file
+            argument: speed_md5
             argument: filesystem
             argument: file = ${new_file}
             argument: overwrite = ${overwrite_image}
+            argument: ignore_error = 0
+
+            define: urls
+
+            [Assign]
+            urls_sorted = ${urls}
         [EndIf]
 
         [Assign]
@@ -138,10 +151,19 @@ message =
             [Error]
             Need to fetch ROM ${filesystem}:${rom_file} but fetch=${fetch} (not 1)
         [Else]
-            [Include File=fileserver.actions.txt]
+            [Include File=fileserver_speed.actions.txt]
+            argument: urls = ${urls_sorted}
+            argument: speed_file
+            argument: speed_md5
             argument: filesystem
             argument: file = ${rom_file}
             argument: overwrite = ${overwrite_rom}
+            argument: ignore_error = 0
+
+            define: urls
+
+            [Assign]
+            urls_sorted = ${urls}
         [EndIf]
 
         [Assign]
@@ -165,8 +187,10 @@ message =
 [EndIf]
 
 [Return]
+urls_sorted
 verify
 reload
+fake
 debug
 filesystem
 uptime_exceeded

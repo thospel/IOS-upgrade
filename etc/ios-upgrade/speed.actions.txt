@@ -1,10 +1,14 @@
 # Determine transfer speed
 
 [Define]
-probe = ${caller.probe}
+cleanup=
+error=
+all_speeds =
 filesystem = ${caller.filesystem}
 file = ${caller.file}
 md5 = ${caller.md5}
+names = ${global.fileserver_name}${global.newline}
+urls  = ${global.fileserver_url}
 
 [If FromVariable=file]
 ${}
@@ -12,32 +16,146 @@ ${}
     IOS file: Missing SpeedFile setting
 [EndIf]
 
-[Commands Single,IgnoreError]
-del ${filesystem}:${file}
-${}
-${}
-${}
+[While Regex,FromVariable=urls,DefineVariable=url]
+.+
+    [If Not,Regex,FromVariable=names,DotAll,Anchor=FullString]
+    (?<name>[^\n]+)\n(?<rest>.*)
+        [Bug]
+        Cannot parse names '${names}'
+    [Else]
+        [Assign]
+        names = ${rest}
+        cleanup =
 
-[Include File=fileserver.actions.txt]
-argument: filesystem
-argument: file
-argument: overwrite=0
+        [Commands Single,IgnoreError]
+        del ${filesystem}:${file}
+        ${}
+        ${}
+        ${}
 
-define: speed
+        [Include File=fileserver.actions.txt]
+        argument: url
+        argument: filesystem
+        argument: file
+        argument: overwrite=0
+        argument: ignore_error = 1
 
-[If Not,FromVariable=md5]
+        define: speed
+        define: error_line
+
+        [Assign]
+        all_speeds = ${all_speeds}${name}${global.null}${url}${global.null}
+
+        [If FromVariable=error_line]
+        ${}
+            # No error
+            [Assign]
+            cleanup = 1
+            all_speeds = ${all_speeds}${speed}
+
+            [If Not,FromVariable=md5]
+            ${}
+                # Currently we don't really use this. Should just drop it
+                [Include File=verify.actions.txt]
+                argument: context = Transfer speed test file verify failure
+                argument: file = ${filesystem}:${file}
+                argument: md5
+            [EndIf]
+        [Else]
+            [If FromVariable=error]
+            ${}
+                [Assign]
+                error = ${error_line}
+            [EndIf]
+
+            [If FromVariable=error_line,IgnoreCase,Anchor=SubString]
+            No such file or directory
+                [Assign]
+                # We will keep this one in the "valid" list.
+                # Maybe it's just the speed test file that is missing
+                all_speeds = ${all_speeds}${error_line} -1
+            [Else]
+                [Assign]
+                # This seems to be a real error. Drop it from the "valid" list
+                all_speeds = ${all_speeds}${error_line} -0
+            [EndIf]
+        [EndIf]
+        [Assign]
+        all_speeds = ${all_speeds}${global.newline}
+    [EndIf]
+[Else]
+    [Bug]
+    No URLs
+[EndWhile]
+
+[If Not,Anchor=FullString,FromVariable=names]
 ${}
-    [Include File=verify.actions.txt]
-    argument: context = Transfer speed test file verify failure
-    argument: file = ${filesystem}:${file}
-    argument: md5
+    [Bug]
+    names is not empty: '${names}'
 [EndIf]
 
-[Commands Single]
-del ${filesystem}:${file}
+[If Not,FromVariable=cleanup]
 ${}
-${}
-${}
+    [Commands Single]
+    del ${filesystem}:${file}
+    ${}
+    ${}
+    ${}
+[EndIf]
+
+[Include File=sort.actions.txt]
+argument: cmp = >
+argument: list = ${all_speeds}
+define:   all_speeds_sorted = ${return.sorted}
+define:   speeds_sorted =
+define:   urls_sorted   =
+define:   valid_speeds_sorted =
+define:   valid_urls_sorted   =
+
+[While Regex,FromVariable=all_speeds_sorted]
+(?<name>[^\0\n]*)\0(?<url>[^\0\n]*)\0(?<speed>[^\0\n]*)
+    [Assign]
+    speeds_sorted = ${speeds_sorted}${name}: ${speed}${global.newline}
+    urls_sorted   = ${urls_sorted}${url}${global.newline}
+    [If Not,Regex,FromVariable=speed,Anchor=SubString]
+    ${} -0$
+        [Assign]
+        valid_speeds_sorted = ${valid_speeds_sorted}${name}: ${speed}${global.newline}
+        valid_urls_sorted   = ${valid_urls_sorted}${url}${global.newline}
+    [EndIf]
+[Else]
+    [Bug]
+    No all_speeds lines matched
+[EndWhile]
+
+# Remove final newlines
+[If Regex,FromVariable=urls_sorted,Anchor=SubString,DotAll,DefineVariable=tmp]
+\A.*[^\n]$
+    [Assign]
+    urls_sorted = ${tmp}
+[EndIf]
+
+[If Regex,FromVariable=valid_urls_sorted,Anchor=SubString,DotAll,DefineVariable=tmp]
+\A.*[^\n]$
+    [Assign]
+    valid_urls_sorted = ${tmp}
+[EndIf]
+
+[If Regex,FromVariable=speeds_sorted,Anchor=SubString,DotAll,DefineVariable=tmp]
+\A.*[^\n]$
+    [Assign]
+    speeds_sorted = ${tmp}
+[EndIf]
+
+[If Regex,FromVariable=valid_speeds_sorted,Anchor=SubString,DotAll,DefineVariable=tmp]
+\A.*[^\n]$
+    [Assign]
+    valid_speeds_sorted = ${tmp}
+[EndIf]
 
 [Return]
-speed
+error
+urls_sorted
+valid_urls_sorted
+speeds_sorted
+valid_speeds_sorted

@@ -1,0 +1,12 @@
+# Get the current time
+[Commands DefineVariable=time]
+show clock
+
+[If FromVariable=time,Anchor=Substring]
+\n
+    [Bug]
+    multiline 'show clock' output '${time}'
+[EndIf]
+
+[Return]
+time

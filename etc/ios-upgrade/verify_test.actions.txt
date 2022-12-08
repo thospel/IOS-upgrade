@@ -24,6 +24,18 @@ ${}
     Assertion: Only filesystem for verify: ${file}
 [EndIf]
 
+# The error for a missing file from verify is a bit obscure. So stat first
+[Include File=stat.actions.txt]
+argument: file
+define: stat
+define: error
+
+[If FromVariable=stat]
+0
+    [Return]
+    verify_error = ${error}
+[EndIf]
+
 [If FromVariable=md5]
 ${}
     # We don't have a target md5, so try to use an embedded verify (slow)

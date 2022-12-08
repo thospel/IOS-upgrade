@@ -1,19 +1,32 @@
 # Check if we have a given file
+# If not we also return an error message like 'File not found'
 
 [Commands IgnoreError,DefineVariable=show_result]
-show file information ${caller.filesystem}:${caller.file}
+show file information ${caller.file}
 
-[If Regex,Anchor=SubString, FromVariable=show_result]
-^\s+type is\s
+[Define]
+last_error = ${global.last_error}
+
+[If FromVariable=last_error,Anchor=FullString]
+${}
+    # No error. We should be able to parse the output
+    [If Not,Regex,Anchor=SubString, FromVariable=show_result]
+    ^\s+type is\s
+        [Bug]
+        Cannot parse show file information output: '${show_result}'
+    [EndIf]
     [Return]
     stat = 1
-[ElseIf Regex,IgnoreCase, FromVariable=show_result]
-%Error opening\s.*\((?:File not found|No such file or directory|Permission denied)\)
-    # Command is known but no result.
-    # Permission denied seems to be the same as file not found
-    [Return]
-    stat = 0
 [EndIf]
 
-[Error]
-Cannot parse show file information output: '${show_result}'
+# Some kind of "File not found" wpuld be normal
+# (Permission denied seems to be the same as file not found)
+[If Regex,IgnoreCase,FromVariable=last_error]
+Error opening\s.*\((?:File not found|No such file or directory|Permission denied)\)
+    [Return]
+    stat = 0
+    error = File '${caller.file}' not found
+[EndIf]
+
+[Bug]
+${last_error}

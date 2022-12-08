@@ -6,9 +6,12 @@
 report_file    = ${global.work_dir}/IOS_report.txt
 upgrade_file   = ${global.work_dir}/IOS_upgrade.txt
 noupgrade_file = ${global.work_dir}/IOS_noupgrade.txt
+report_fileserver = ${env.IOS_UPGRADE_REPORT_FILESERVER or global.empty}
 upgrade_ios = ?
 upgrade_firmware = ?
 upgrade = No
+have_image
+have_rom
 
 # Make sure noupgrade_file will exist even if empty
 [Print FileFromVariable=noupgrade_file]
@@ -18,8 +21,8 @@ upgrade = No
 
 # Make sure there is a record for a device in report_file even in case of error
 [Print FileFromVariable=report_file]
-======================
-Device:     ${global.device_name}
+${}
+${}[${global.device_name}]
 
 [Include File=IOS.actions.txt]
 argument: probe = 1
@@ -34,10 +37,14 @@ define: uptime_exceeded
 
 define: old_file
 define: new_file
+define: new_md5
 define: valid_image
+define: have_image_file
 
 define: rom_file
+define: rom_md5
 define: valid_rom
+define: have_rom_file
 define: old_rom_id
 define: rom_id
 
@@ -45,6 +52,7 @@ define: rom_id
 ${}
     [Assign]
     new_file = ?
+    new_md5 = ?
     valid_image = ?
 [ElseIf FromVariable=valid_image]
 0
@@ -57,11 +65,26 @@ ${}
     upgrade_ios = No
 [EndIf]
 
+[If FromVariable=have_image_file]
+1
+    [Assign]
+    have_image = Yes
+[ElseIf FromVariable=have_image_file]
+0
+    [Assign]
+    have_image = No
+[Else]
+    [Assign]
+    have_image = ?
+[EndIf]
+
 [If FromVariable=rom_id]
 ${}
     [Assign]
     rom_id = ?
     valid_rom = ?
+    rom_file = ?
+    rom_md5 = ?
 [ElseIf FromVariable=valid_rom]
 0
     [Assign]
@@ -71,6 +94,19 @@ ${}
 1
     [Assign]
     upgrade_firmware = No
+[EndIf]
+
+[If FromVariable=have_rom_file]
+1
+    [Assign]
+    have_rom = Yes
+[ElseIf FromVariable=have_rom_file]
+0
+    [Assign]
+    have_rom = No
+[Else]
+    [Assign]
+    have_rom = ?
 [EndIf]
 
 [If FromVariable=uptime_exceeded]
@@ -101,20 +137,43 @@ Yes
 
 [Print FileFromVariable=report_file]
 ${}
-Series:     ${series}
-FileSystem: ${filesystem}
-Uptime:     ${uptime}
-UpTooLong:  ${uptime_exceeded}
+Series=         ${series}
+FileSystem=     ${filesystem}
+Uptime=         ${uptime}
+UpTooLong=      ${uptime_exceeded}
 ${}
-CurrentIOS: ${old_file}
-TargetIOS:  ${new_file}
-UpgradeIOS: ${upgrade_ios}
+CurrentIOS=     ${old_file}
+TargetIOS=      ${new_file}
+
+[If Not,FromVariable=report_fileserver]
 ${}
-CurrentFirmware: ${old_rom_id}
-TargetFirmware:  ${rom_id}
-UpgradeFirmware: ${upgrade_firmware}
+    [Print FileFromVariable=report_file]
+    TargetIOSMd5=   ${new_md5}
+[EndIf]
+
+[Print FileFromVariable=report_file]
+# 'TargetIOSHave' would be a bad name
+# It suggests that it indicates Target == Current
+TargetIOSStat=  ${have_image}
+UpgradeIOS=     ${upgrade_ios}
 ${}
-Upgrade: ${upgrade}
+CurrentFirmware=    ${old_rom_id}
+TargetFirmware=     ${rom_id}
+
+[If Not,FromVariable=report_fileserver]
+${}
+    [Print FileFromVariable=report_file]
+    TargetFirmwareFile= ${rom_file}
+    TargetFirmwareMd5=  ${rom_md5}
+[EndIf]
+
+[Print FileFromVariable=report_file]
+# 'TargetFirmwareHave' would be a bad name
+# It suggests that it indicates Target == Current
+TargetFirmwareStat= ${have_rom}
+UpgradeFirmware=    ${upgrade_firmware}
+${}
+Upgrade=        ${upgrade}
 
 [Return]
 report_file

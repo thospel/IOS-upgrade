@@ -1,0 +1,106 @@
+# Like filetransfer.actions.txt
+# But do a speed test if needed and cycle through the available servers
+
+[Define]
+urls		= ${caller.urls}
+filesystem	= ${caller.filesystem}
+file		= ${caller.file}
+overwrite	= ${caller.overwrite}
+ignore_error	= ${caller.ignore_error}
+first_error =
+first_error_line =
+
+# If no URL list given fall back to --fileserver
+[If FromVariable=urls,Anchor=FullString]
+${}
+    [Assign]
+    # Get URLs from option --fileserver
+    urls = ${global.fileserver_url}
+[EndIf]
+
+# If there is more than one URL do speed tests
+[If Regex,FromVariable=urls,Anchor=SubString]
+\n.
+    [Include File=speed.actions.txt]
+    argument: filesystem
+    argument: file  = ${caller.speed_file}
+    argument: md5   = ${caller.speed_md5}
+
+    define: valid_urls_sorted
+    define: speeds_sorted
+
+    # If there are no valid URLs this could be because the speed_file is missing
+    # In that case we leave the current URLs
+    # Otherwise we have sorted list of reachable URLs (fastest first)
+    # (speed.actions.txt will try to leave reachable URLs without speed_file
+    # at the end of the valid_urls_sorted list)
+    [If Regex,FromVariable=valid_urls_sorted,Anchor=SubString]
+    \A.
+        # There is at least one URL
+        [Assign]
+        urls = ${valid_urls_sorted}
+    [EndIf]
+
+    [Print]
+    Speed test result:
+    ${speeds_sorted}
+    Determined order:
+    ${urls}
+[EndIf]
+
+# Try the URLs in order. Exit the loop if we find the target file
+[While Regex,FromVariable=urls,DefineVariable=url]
+.+
+    [Include File=fileserver.actions.txt]
+    argument: url
+    argument: filesystem
+    argument: file
+    argument: overwrite
+    argument: ignore_error = 1
+
+    define: error
+    define: error_line
+    define: size
+    define: speed
+
+    [If FromVariable=error_line]
+    ${}
+        # Immediately return on first successful transfer
+        [Return]
+        urls
+        error
+        error_line
+        size
+        speed
+    [ElseIf FromVariable=first_error_line]
+    ${}
+        # First error
+        [Assign]
+        # No need to copy size and speed, they are meaningless
+        first_error      = ${error}
+        first_error_line = ${error_line}
+    [EndIf]
+[Else]
+    [Bug]
+    No valid URLs
+[EndWhile]
+
+[If FromVariable=first_error_line]
+${}
+    [Bug]
+    Empty first_error_line
+[EndIf]
+
+[If Not,FromVariable=ignore_error]
+1
+    [Error]
+    ${first_error}
+[EndIf]
+
+# If we have ignore_error then we (rather arbitrarily) return the first error
+[Return]
+urls
+first_error
+first_error_line
+size =
+speed = 0

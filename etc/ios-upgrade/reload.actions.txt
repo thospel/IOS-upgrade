@@ -5,6 +5,7 @@
 [Include File=IOS.actions.txt]
 argument: probe = 0
 
+define: fake
 define: debug
 define: verify
 define: reload
@@ -24,6 +25,7 @@ define: valid_rom
 define: have_rom_file
 
 [Include File=reboot.actions.txt]
+argument: fake
 argument: old_verify = ${verify}
 argument: new_verify = ${verify}
 argument: reload

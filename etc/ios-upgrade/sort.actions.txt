@@ -1,0 +1,101 @@
+# This is extremely silly, we implement sort using loops and regex
+# This will become completely useless once we implement real expression support
+
+[Define]
+list = ${caller.list}
+operator = ${caller.cmp}
+
+[If FromVariable=operator,Anchor=FullString]
+<
+    [Assign]
+    operator = >
+[ElseIf FromVariable=operator,Anchor=FullString]
+>
+    [Assign]
+    operator = <
+[Else]
+    [Bug]
+    Unknown compare compare operator '${operator}'
+[Endif]
+
+# Make sure there is a final \n
+[If Not,Regex, FromVariable=list,Anchor=FullString,DotAll]
+\A(?<prefix>.*?)\n*\Z
+    [Bug]
+    Impossible list '${list}'
+[ElseIf FromVariable=prefix,Anchor=FullString]
+${}
+    # Early exit for empty string
+    [Return]
+    sorted=
+[Else]
+    [Assign]
+    list = ${prefix}${global.newline}
+[EndIf]
+
+# Sanity check. No empty lines
+[If Regex,FromVariable=list,Anchor=Substring]
+^\n
+    [Bug]
+    Empty line in '${list}'
+[EndIf]
+
+# Sanity check, all lines end with a number
+[If Regex,FromVariable=list,DefineVariable=bad]
+.*[^\d\n]
+    [Bug]
+    Non integer entry '${bad}'
+[EndIf]
+
+[If Not,Regex,FromVariable=list,Anchor=FullString,DotAll]
+(?<sorted>[^\n]*\n)(?<list_rest>.*)
+    [Bug]
+    Not a full line in non empty string
+[Else]
+    [If Not,FromVariable=list_rest,Anchor=FullString]
+    ${}
+        # We do an insertion sort
+        # Loop over lines...
+        [While Regex,FromVariable=list_rest,DefineVariable=body]
+        (?:|.*[^\n\d])(?<left>\d+)
+            # Find insertion point
+            # Loop over lines in already sorted part...
+            [While Regex,FromVariable=sorted,Anchor=SubString]
+            (?:|.*[^\n\d])(?<right>\d+)$
+                [Include File=compare.actions.txt]
+                argument: left
+                argument: right
+                define: cmp
+
+                [If Not,FromVariable=cmp]
+                ${operator}
+                    # Found insertion point
+                    [If Not,Regex,FromVariable=sorted,DotAll,Anchor=FullString]
+                    (?<before>.*?)^(?<after>(?:|[^\n]*[^\n\d])${right}$.*)
+                        [Bug]
+                        Cannot refind insertion point '${right}'
+                    [Else]
+                        [Assign]
+                        sorted = ${before}${body}${global.newline}${after}
+                    [EndIf]
+                    # As long as we haven't implemented [Break] we need a goto
+                    [Goto target=FOUND]
+                [EndIf]
+            [Else]
+                [Bug]
+                No line in non empty sorted '${sorted}'
+            [EndWhile]
+
+            # No insertion point found, Append to the end
+            [Assign]
+            sorted = ${sorted}${body}${global.newline}
+
+            [Pass label=FOUND]
+        [Else]
+            [Bug]
+            No line in non empty list '${list_rest}'
+        [EndWhile]
+    [EndIf]
+    [Return]
+    sorted
+[EndIf]

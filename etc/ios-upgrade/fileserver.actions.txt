@@ -1,29 +1,76 @@
-[Define Variable=newline,Single]
-${}
-${}
-
+# We do a /noverify copy. It is up to the caller to run their own verify
+# This is mostly because the implicit verify copy sometimes does for .bin files
+# is based on the internal hash which is very slow on some devices, and we
+# typically do a /md5 verify which is pretty fast
 [Define]
+url = ${caller.url}
 overwrite = ${caller.overwrite}
+ignore_error = ${caller.ignore_error}
+fileserver_result
 # Press enter 3 times to confirm user/pass/path
-confirm = ${newline}${newline}${newline}
+confirm = ${global.newline}${global.newline}${global.newline}
+
+# Get first line from url
+[If Regex,FromVariable=url,DefineVariable=first_url,Anchor=FullString]
+(.+)
+    [Assign]
+    url = ${first_url}
+[Else]
+    [Bug]
+    Url is not a single line: '${url}'
+[EndIf]
 
 [If Not,FromVariable=overwrite]
 0
-    # Need to press enter one more time to confirm overwrite
+    # Need to press enter one extra time to confirm overwrite
     [Assign]
-    confirm = ${confirm}${newline}
+    confirm = ${confirm}${global.newline}
 [EndIf]
 
-[Commands Single, DefineVariable=fileserver_result]
-copy ${global.fileserver_url}${caller.file} ${caller.filesystem}:
-# Press enter 3 times to confirm user/pass/path
-${confirm}
+[If FromVariable=ignore_error]
+1
+    [Commands Single, DefineVariable=output,IgnoreError=True]
+    copy /noverify ${url}${caller.file} ${caller.filesystem}:
+    # Press enter 3 times to confirm user/pass/path
+    ${confirm}
+
+    [Assign]
+    fileserver_result = ${output}
+
+    [Define]
+    error = ${global.last_error}
+
+    [If Not,FromVariable=error,Anchor=FullString]
+    ${}
+        [If Not,Regex,FromVariable=error,DefineVariable=first_line]
+        .+
+            [Bug]
+            No first line in error '${error}'
+        [Else]
+            [Return]
+            error
+            error_line = ${first_line}
+            size  =
+            speed = 0
+        [EndIf]
+    [EndIf]
+[Else]
+    [Commands Single, DefineVariable=output,IgnoreError=False]
+    copy /noverify ${url}${caller.file} ${caller.filesystem}:
+    # Press enter 3 times to confirm user/pass/path
+    ${confirm}
+
+    [Assign]
+    fileserver_result = ${output}
+[EndIf]
 
 [If Regex,FromVariable=fileserver_result]
 (?<transfer_line>(?<size>\d+) bytes copied.*)
     [If Regex,FromVariable=transfer_line,Anchor=Substring]
     \(\s*(?<speed>\d+)\s+bytes/sec\)$
         [Return]
+        error =
+        error_line =
         size
         speed
     [Else]

@@ -3,6 +3,7 @@
 # Fetch image and Reboot to new IOS
 
 [Include File=transfer.actions.txt]
+define: fake
 define: verify
 define: reload
 define: uptime_exceeded
@@ -21,6 +22,7 @@ define: valid_rom
 define: message_transfer = ${return.message}
 
 [Include File=reboot.actions.txt]
+argument: fake
 argument: old_verify = ${verify}
 argument: new_verify = 0
 argument: reload

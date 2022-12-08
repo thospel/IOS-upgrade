@@ -1,7 +1,11 @@
 # Determine target IOS
 
 [Define]
-fake = shell-test-cisco
+fake_devices = shell-test-cisco 10.127.109.3 shell.ams.cisco
+fake=
+# fake_ios = c3900-universalk9-mz.SPA.156-3.M8.bin
+fake_ios = c2960s-universalk9-mz.150-2.SE7.bin
+
 debug_truncate=
 filesystem=
 uptime=
@@ -64,8 +68,7 @@ System image file is "(?<full_image>.*)"
 
         # The current image name should exist on the filesystem
         [Include File=stat.actions.txt]
-        argument: filesystem
-        argument: file = ${image}
+        argument: file = ${filesystem}:${image}
 
         define: stat
 
@@ -115,24 +118,25 @@ System image file is "(?<full_image>.*)"
                     [EndIf]
                 [Else]
                     [Error]
-                    Could not not find (possible truncated) IOS image file ${filesystem}${image}
+                    Could not not find (possible truncated) current IOS image file ${filesystem}${image}
                 [EndWhile]
                 [Assign]
                 image = ${complete}
             [Else]
                 [Error]
-                Could not find IOS image file ${filesystem}${image}
+                Could not find current IOS image file ${filesystem}${image}
             [EndIf]
         [EndIf]
     [EndIf]
 [EndIf]
 
-# Fake image on device named 'shell-test-cisco' for development
-[If FromVariable=device_name]
-${fake}
+# Fake image for development
+[If Regex,FromVariable=fake_devices,IgnoreCase,Anchor=Substring]
+(^|\s)${device_name}(\s|$)
     [Assign]
+    fake = 1
     filesystem = flash
-    image =      c3900-universalk9-mz.SPA.156-3.M8.bin
+    image = ${fake_ios}
 [EndIf]
 
 # Sometimes the image is something like bootflash:packages.conf
@@ -246,8 +250,7 @@ ${fake}
     [Else]
         # Do we have the new image ?
         [Include file=stat.actions.txt]
-        argument: filesystem
-        argument: file = ${new_file}
+        argument: file = ${filesystem}:${new_file}
 
         define: stat
 
@@ -288,8 +291,7 @@ ${fake}
     [Else]
         # Do we have the new ROM ?
         [Include file=stat.actions.txt]
-        argument: filesystem
-        argument: file = ${rom_file}
+        argument: file = ${filesystem}:${rom_file}
 
         define: stat
 
@@ -324,6 +326,7 @@ ${fake}
     [EndIf]
 
     [Return]
+    fake
     debug
     verify
     fetch

@@ -1,0 +1,14 @@
+name: IOS-upgrade
+channels:
+  - defaults
+dependencies:
+  - python=3.8.11
+  - colorama
+  - rich
+  - pycurl
+  - types-pycurl
+  - sphinx
+  - mypy
+  - autoflake
+  - safety
+  - pip
