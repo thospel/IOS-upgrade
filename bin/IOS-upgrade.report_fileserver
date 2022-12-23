@@ -61,7 +61,7 @@ CURL_JOBS = 10
 MD5_JOBS = 10
 # CURLINFO_LONG = 0x200000
 CONNECT_TIMEOUT = 10
-DOWNLOAD_TIMEOUT = 100
+DOWNLOAD_TIMEOUT = 120
 # How much we remember from the file to check for "the same"
 HEAD_BLOCK = 1 << 16
 # Block size we use to read from local files during MD5 calculation

@@ -2,7 +2,7 @@
 # This will become completely useless once we implement real expression support
 
 [Define]
-list = ${caller.list}
+array = ${caller.array}
 operator = ${caller.cmp}
 
 [If FromVariable=operator,Anchor=FullString]
@@ -19,48 +19,48 @@ operator = ${caller.cmp}
 [Endif]
 
 # Make sure there is a final \n
-[If Not,Regex, FromVariable=list,Anchor=FullString,DotAll]
+[If Not,Regex, FromVariable=array,Anchor=FullString,DotAll]
 \A(?<prefix>.*?)\n*\Z
     [Bug]
-    Impossible list '${list}'
+    Impossible array '${array}'
 [ElseIf FromVariable=prefix,Anchor=FullString]
 ${}
     # Early exit for empty string
     [Return]
-    sorted=
+    sorted_array=
 [Else]
     [Assign]
-    list = ${prefix}${global.newline}
+    array = ${prefix}${global.newline}
 [EndIf]
 
 # Sanity check. No empty lines
-[If Regex,FromVariable=list,Anchor=Substring]
+[If Regex,FromVariable=array,Anchor=Substring]
 ^\n
     [Bug]
-    Empty line in '${list}'
+    Empty line in '${array}'
 [EndIf]
 
 # Sanity check, all lines end with a number
-[If Regex,FromVariable=list,DefineVariable=bad]
+[If Regex,FromVariable=array,DefineVariable=bad]
 .*[^\d\n]
     [Bug]
     Non integer entry '${bad}'
 [EndIf]
 
-[If Not,Regex,FromVariable=list,Anchor=FullString,DotAll]
-(?<sorted>[^\n]*\n)(?<list_rest>.*)
+[If Not,Regex,FromVariable=array,Anchor=FullString,DotAll]
+(?<sorted_array>[^\n]*\n)(?<array_rest>.*)
     [Bug]
     Not a full line in non empty string
 [Else]
-    [If Not,FromVariable=list_rest,Anchor=FullString]
+    [If Not,FromVariable=array_rest,Anchor=FullString]
     ${}
         # We do an insertion sort
         # Loop over lines...
-        [While Regex,FromVariable=list_rest,DefineVariable=body]
+        [While Regex,FromVariable=array_rest,DefineVariable=body]
         (?:|.*[^\n\d])(?<left>\d+)
             # Find insertion point
             # Loop over lines in already sorted part...
-            [While Regex,FromVariable=sorted,Anchor=SubString]
+            [While Regex,FromVariable=sorted_array,Anchor=SubString]
             (?:|.*[^\n\d])(?<right>\d+)$
                 [Include File=compare.actions.txt]
                 argument: left
@@ -70,32 +70,32 @@ ${}
                 [If Not,FromVariable=cmp]
                 ${operator}
                     # Found insertion point
-                    [If Not,Regex,FromVariable=sorted,DotAll,Anchor=FullString]
+                    [If Not,Regex,FromVariable=sorted_array,DotAll,Anchor=FullString]
                     (?<before>.*?)^(?<after>(?:|[^\n]*[^\n\d])${right}$.*)
                         [Bug]
                         Cannot refind insertion point '${right}'
                     [Else]
                         [Assign]
-                        sorted = ${before}${body}${global.newline}${after}
+                        sorted_array = ${before}${body}${global.newline}${after}
                     [EndIf]
                     # As long as we haven't implemented [Break] we need a goto
                     [Goto target=FOUND]
                 [EndIf]
             [Else]
                 [Bug]
-                No line in non empty sorted '${sorted}'
+                No line in non empty sorted '${sorted_array}'
             [EndWhile]
 
             # No insertion point found, Append to the end
             [Assign]
-            sorted = ${sorted}${body}${global.newline}
+            sorted_array = ${sorted_array}${body}${global.newline}
 
             [Pass label=FOUND]
         [Else]
             [Bug]
-            No line in non empty list '${list_rest}'
+            No line in non empty array '${array_rest}'
         [EndWhile]
     [EndIf]
     [Return]
-    sorted
+    sorted_array
 [EndIf]

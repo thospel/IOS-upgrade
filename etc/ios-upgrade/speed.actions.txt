@@ -71,12 +71,12 @@ ${}
             [If FromVariable=error_line,IgnoreCase,Anchor=SubString]
             No such file or directory
                 [Assign]
-                # We will keep this one in the "valid" list.
+                # We will keep this one in the "valid" array.
                 # Maybe it's just the speed test file that is missing
                 all_speeds = ${all_speeds}${error_line} -1
             [Else]
                 [Assign]
-                # This seems to be a real error. Drop it from the "valid" list
+                # This seems to be a real error. Drop it from the "valid" array
                 all_speeds = ${all_speeds}${error_line} -0
             [EndIf]
         [EndIf]
@@ -105,8 +105,8 @@ ${}
 
 [Include File=sort.actions.txt]
 argument: cmp = >
-argument: list = ${all_speeds}
-define:   all_speeds_sorted = ${return.sorted}
+argument: array = ${all_speeds}
+define:   all_speeds_sorted = ${return.sorted_array}
 define:   speeds_sorted =
 define:   urls_sorted   =
 define:   valid_speeds_sorted =

@@ -46,11 +46,11 @@ System image file is "(?<full_image>.*)"
 [Else]
     [If Not,FromVariable=debug_truncate,Any]
     ${}
-    0+
-        [If Regex,Anchor=Substring,FromVariable=full_image,DefineVariable=all]
+    0
+        [If Regex,Anchor=Substring,FromVariable=full_image,DefineVariable=truncated]
         ^.{63}
             [Assign]
-            full_image = ${all}
+            full_image = ${truncated}
         [EndIf]
     [EndIf]
 
@@ -85,7 +85,7 @@ System image file is "(?<full_image>.*)"
                 image_regex = ${image}
                 complete=
 
-                [Commands DefineVariable=dir]
+                [Commands DefineVariable=directory]
                 show ${filesystem}: | include ${image_regex}
 
                 # Two sorts of typical output lines:
@@ -103,7 +103,7 @@ System image file is "(?<full_image>.*)"
                 # If needed we can support this by using `dir file*`, but `dir`
                 # is (currently) not allowed for a pure RO user
 
-                [While Regex,FromVariable=dir]
+                [While Regex,FromVariable=directory]
                 # Don't check for the specific filesystem. it can differ
                 \s*\d+\s+.*\s+(?:/[^/]+/|)(?<full>${image}[^/]*)
                     [If FromVariable=complete]
