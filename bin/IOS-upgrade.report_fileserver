@@ -36,6 +36,9 @@ from typing import (
     MutableMapping, TypeVar, ClassVar, DefaultDict, IO, Text, Union
 )
 
+# Our own libraries
+from ios_upgrade.helper import helper
+
 # External modules
 import colorama		# type: ignore
 from rich.theme import Theme
@@ -50,8 +53,7 @@ from rich.progress import (
 # Debian: apt install libcurl4-gnutls-dev gnutls-dev
 import pycurl
 
-HELPER = Path(__file__).parent / "IOS-upgrade.helper"
-REPORT_SPEED = Path(__file__).parent / "IOS-upgrade.report_speed"
+REPORT_SPEED = "report_speed"
 IOS_REPORT = "IOS_report.txt"
 FILESERVER_REPORT = "fileserver_report.txt"
 INVALID = set(("", "?"))
@@ -77,9 +79,9 @@ PROGRESS_TRANSIENT = True
 GREEN		= "green"
 BLUE		= "bright_blue"
 
-# This is an bitwise or of the device-apply exit flags for:
+# This is an bitwise or of the device-apply exit flags (without DONE)
 # PROGRESS =2, FAILED = 4, ERROR = 8, BUG = 16, DONE = 32
-FAILED_EXIT_BITS = 62
+FAILED_EXIT_BITS = 30
 MESSAGE_FILE_NOT_FOUND = "File not found"
 
 INI_HEADER = re.compile(r"\[\s*(\S+)\s*\]\s*")
@@ -1365,10 +1367,12 @@ class ShowProgress:
                              description = description,
                              completed = 0,
                              total = None)
+        # print(f"Start task {self.task}")
         self.progress.start_task(self.task)
 
     def stop(self) -> None:
         self._file_status = None
+        # print(f"Stop task {self.task}")
         self.progress.stop_task(self.task)
 
     def update(self, dl_total: int, dl_now: int, ul_total: int, ul_now: int) -> None:
@@ -1478,7 +1482,7 @@ def check_files(urls: Iterable[FileStatus]) -> None:
 
         #print("PycURL %s (compiled against 0x%x)" %
         #      (pycurl.version, pycurl.COMPILE_LIBCURL_VERSION_NUM))
-        print(f"Getting {len(todo)} URLs using {nr_jobs} connections")
+        print(f"Getting {len(todo)} URLs using {nr_jobs} connections\n(unfinished downloads are often just probes)")
 
         # Main loop
         nr_todo = len(todo)
@@ -1538,7 +1542,9 @@ def check_files(urls: Iterable[FileStatus]) -> None:
                 nr_todo -= len(ok_list) + len(err_list)
                 if nr_q == 0:
                     break
-    print("Downloads done (unfinished downloads are often just probes)")
+        # This is not the cauee of the slow exit through proxy. What is ?
+        # del shows
+    print("Downloads done")
 
 def check_fileserver(metadata: ConfigParser):
     # metadata.write(sys.stdout)
@@ -1623,17 +1629,15 @@ def check_fileserver(metadata: ConfigParser):
     fileservers.update_IOS_report(metadata, ios_report)
 
 if __name__=='__main__':
-    if len(sys.argv) > 1 and sys.argv[1] in ("--version", "--help", "-h"):
-        os.execv(sys.executable, [sys.executable, str(HELPER), *sys.argv])
-
     with NamedTemporaryFile(mode="r") as tmp_file:
         os.environ["IOS_UPGRADE_REPORT_FILESERVER"] = tmp_file.name
-        result = run([sys.executable, REPORT_SPEED, *sys.argv[1:]])
+        result = helper(exec = False, name = REPORT_SPEED)
         if result.returncode != 0:
             if result.returncode < 0:
                 raise SystemExit(f"Killed by signal {-result.returncode}")
             if result.returncode & ~FAILED_EXIT_BITS:
                 sys.exit(result.returncode)
+
         metadata = CaseConfigParser(
             delimiters = ("=",),
             empty_lines_in_values = False,
