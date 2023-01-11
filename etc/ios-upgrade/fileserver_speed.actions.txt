@@ -15,7 +15,7 @@ first_error_line =
 ${}
     [Assign]
     # Get URLs from option --fileserver
-    urls = ${global.fileserver_url}
+    urls = ${ "\n".join(fs.url() for fs in global.fileservers.values()) }
 [EndIf]
 
 # If there is more than one URL do speed tests
@@ -26,24 +26,24 @@ ${}
     argument: file  = ${caller.speed_file}
     argument: md5   = ${caller.speed_md5}
 
-    define: valid_urls_sorted
     define: speeds_sorted
+    define: valid_speeds_sorted = ${ [speed for speed in return.speeds_sorted if speed.valid] }
 
-    # If there are no valid URLs this could be because the speed_file is missing
-    # In that case we leave the current URLs
+    # If there are no valid speeds this could be because the speed_file is
+    # missing. In that case we leave the current URLs
     # Otherwise we have sorted list of reachable URLs (fastest first)
     # (speed.actions.txt will try to leave reachable URLs without speed_file
-    # at the end of the valid_urls_sorted list)
-    [If Regex,FromVariable=valid_urls_sorted,Anchor=SubString]
-    \A.
-        # There is at least one URL
+    # at the end of the sorted speeds list)
+    [If Not,FromVariable=len(valid_speeds_sorted)]
+    0
+        # There is at least one valid speed
         [Assign]
-        urls = ${valid_urls_sorted}
+        urls = ${"\n".join(speed.url for speed in valid_speeds_sorted) }
     [EndIf]
 
     [Print]
     Speed test result:
-    ${speeds_sorted}
+    ${"\n".join(str(speed) for speed in speeds_sorted) }
     Determined order:
     ${urls}
 [EndIf]

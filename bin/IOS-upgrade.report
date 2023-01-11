@@ -1,6 +1,1659 @@
 #!/usr/bin/env python3
+
+# Use future to be able to mention a class while it is not yet defined
+from __future__ import annotations
+
+import os
+import sys
+import socket
+import errno
+import re
+import hashlib
+from time import monotonic
+from datetime import datetime
+from io import BufferedIOBase
+from dataclasses import dataclass, field, InitVar
+from collections import defaultdict, deque, UserDict
+from contextlib import contextmanager
+from itertools import chain
+from functools import lru_cache
+from configparser import ConfigParser
+from tempfile import NamedTemporaryFile
+from pathlib import Path
+from enum import Enum, auto, IntEnum, unique
+from math import inf
+from email.utils import parsedate_to_datetime
+from urllib.parse import (
+    urlsplit, urlunsplit, quote as url_quote, unquote as url_unquote
+)
+from queue import Queue
+from threading import Thread
+from weakref import ref as weakref, ReferenceType
+from signal import signal, SIGPIPE, SIG_IGN
+from typing import (
+    Optional, Type, Dict, List, Set, Tuple, Iterable, Iterator, NamedTuple,
+    MutableMapping, TypeVar, ClassVar, DefaultDict, IO, Text, Union
+)
+
 # Our own libraries
-from ios_upgrade.helper import helper
+from ios_upgrade.helper import helper, run_args, Option
+
+# External modules
+import colorama		# type: ignore
+from rich.theme import Theme
+from rich.console import Console
+from rich.progress import (
+    Progress, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn,
+    TaskID
+)
+# Local machine will need curldevel
+# Redhat: yum install libcurl-devel rh-python38-python-devel.x86_64
+# Also: install with PYCURL_SSL_LIBRARY=nss (also works with libcurl4-gnutls-dev)
+# Debian: apt install libcurl4-gnutls-dev gnutls-dev
+import pycurl
+
+IOS_REPORT = "IOS_report.txt"
+FILESERVER_REPORT = "fileserver_report.txt"
+INVALID = set(("", "?"))
+# Amount of simultaneous filetransfers
+CURL_JOBS = 10
+# Amount of simultaneous MD5 calculation jobs for local files
+MD5_JOBS = 10
+# CURLINFO_LONG = 0x200000
+CONNECT_TIMEOUT = 10
+DOWNLOAD_TIMEOUT = 120
+# How much we remember from the file to check for "the same"
+HEAD_BLOCK = 1 << 16
+# Block size we use to read from local files during MD5 calculation
+READ_BLOCK = 1 << 18
+# Block size we'd like libcurl to use to pass to our write function
+# (my current libcurl seems to ignore this)
+COPY_BLOCK = 1 << 18
+# Hint to libcurl to use this block size during TFTP transfers
+TFTP_BLOCK_SIZE = 1 << 13
+# A small float value to use instead of 0.0 so we can use 0.0. as "unset" flag
+TINY = 1e-9
+PROGRESS_TRANSIENT = True
+GREEN		= "green"
+BLUE		= "bright_blue"
+
+# This is an bitwise or of the device-apply exit flags (without DONE)
+# PROGRESS =2, FAILED = 4, ERROR = 8, BUG = 16, DONE = 32
+FAILED_EXIT_BITS = 30
+MESSAGE_FILE_NOT_FOUND = "File not found"
+
+INI_HEADER = re.compile(r"\[\s*(\S+)\s*\]\s*")
+EPOCH_BASE = datetime.now().timestamp()
+# Parse dates like "08:56:26.576 UTC Tue Dec 20 2022"
+DATE_PARSER = re.compile(
+    r"""
+    \s*
+    (?:\*\s*)?				# Optional * means not derived from NTP
+    (?P<time>\d+:\d+:\d+)		# Time part, e.g. 08:56:26
+    (?P<fraction>\.\d*|)		# Optional fractional seconds e.g. .576
+    \s+
+    (?P<timezone>\S+)			# Timezone e.g. UTC or CET or CET+1:00
+    \s+
+    (?P<day>\S+) ,?			# Day name e.g. Mon
+    \s+
+    (?P<date>\S+ \s+ \d+ \s+ \d+)	# Date part	e.g. Dec 20 2022
+    \s*
+    """, re.ASCII | re.VERBOSE)
+SPEED_PARSER = re.compile(r"\s*(\S+):\s*(\d+(?:\.\d*)?)\s+bytes/s", re.IGNORECASE)
+ASSIGN_PARSER = re.compile(
+    r"""
+    (?:
+        (?P<upgrade_ios>   UpgradeIOS)		|
+        (?P<upgrade_rom>   UpgradeFirmware)	|
+        (?P<upgrade>       Upgrade)		|
+        (?P<skip> (?:
+            DownloadIOS		|
+            DownloadFirmware	|
+            Download)
+        )
+    ) \s* = [^\S\n]*
+    """, re.IGNORECASE | re.VERBOSE)
+
+@lru_cache(maxsize=None)
+def is_local_ip(host: str) -> bool:
+    """Determine if the given IP/hostname is a local address"""
+
+    with socket.socket(type=socket.SOCK_DGRAM) as s:
+        try:
+            s.bind((host, 0))
+        except (socket.gaierror, socket.herror):
+            return False
+        except OSError as exc:
+            if exc.errno != errno.EADDRNOTAVAIL:
+                raise
+            return False
+        return True
+
+class CaseConfigParser(ConfigParser):
+    """Case sensitive version of ConfigParse"""
+
+    def optionxform(self, optionstr: str) -> str:
+        return optionstr
+
+def epoch_from_cisco(date: str) -> float:
+    """Convert a date as returned from cisco `show clock` to epoch seconds
+    (here epoch is seconds since program start, NOT seconds since 1970/01/01)
+    Timezone information is ignored since we will only this in a subtraction.
+    Cisco date output does not support automatic daylight saving time switches
+    so no need to handle that"""
+    match = DATE_PARSER.fullmatch(date)
+    if not match:
+        raise ValueError(f"Cannot parse cisco clock {date.strip()!r}")
+    epoch = parsedate_to_datetime("%s %s" % match.group("date", "time")).timestamp()
+    return epoch - EPOCH_BASE + float("0" + match["fraction"])
+
+
+@dataclass(frozen = True)
+class URL0:
+    """Parsed URL, but path may be completely absent"""
+
+    url: str
+    url_root: str = field(init = False, compare = False)
+    scheme:   str = field(init = False, compare = False)
+    user:     str = field(init = False, compare = False)
+    password: str = field(init = False, compare = False)
+    host:     str = field(init = False, compare = False)
+    _path:    str = field(init = False, compare = False)
+
+    def __post_init__(self, *args):
+        assert len(args) == 0
+        parts = urlsplit(self.url)
+        # Normalize self.url
+        super().__setattr__("url", urlunsplit(parts))
+        super().__setattr__(
+            "url_root", urlunsplit((parts.scheme, parts.netloc, "/", "", "")))
+        user_pass, _, host = parts.netloc.rpartition("@")
+        user, _, password = user_pass.partition(":")
+        super().__setattr__("scheme",	parts.scheme)
+        super().__setattr__("user",	url_unquote(user))
+        super().__setattr__("password",	url_unquote(password))
+        super().__setattr__("host",	url_unquote(host))
+        super().__setattr__("_path",	url_unquote(parts.path))
+
+        if parts.query:
+            raise AssertionError("URL f{self.safe!r} has a query")
+        if parts.fragment:
+            raise AssertionError("URL f{self.safe!r} has a fragment")
+
+    @property
+    def safe(self) -> str:
+        """URL with password replaced by XXXXXXXX"""
+
+        # Port part of host should keep the :
+        host = url_quote(self.host, safe = ":")
+        user = url_quote(self.user, safe = "")
+        if user:
+            if self.password:
+                user = "%s:XXXXXXXX" % user
+            host = "%s@%s" % (user, host)
+        return "%s://%s%s" % (self.scheme, host, url_quote(self._path))
+
+    @property
+    def path_name(self) -> str:
+        return self._path.rpartition("/")[-1]
+
+    CACHE: ClassVar[Dict[Tuple[str, str], URL0]] = {}
+
+    @classmethod
+    def from_string(cls: Type[URLType], url: str) -> URLType:
+        key = (cls.__name__, url)
+        if key not in URL.CACHE:
+            URL0.CACHE[key] = cls(url)
+        # I know of no clean way to make mypy happy here, so just ignore type
+        return URL0.CACHE[key]	# type: ignore[return-value]
+
+    @classmethod
+    def from_string0(cls: Type[URLType], url: str) -> Optional[URLType]:
+        return cls.from_string(url) if url else None
+
+URLType = TypeVar("URLType", bound=URL0)
+
+class URL(URL0):
+    """Parsed URL, but must have a path"""
+
+    is_local_ip: bool = field(init = False)
+
+    def __post_init__(self, *args):
+        super().__post_init__(*args)
+        super().__setattr__("is_local_ip", is_local_ip(self.host))
+        if not self._path.startswith("/"):
+            raise AssertionError(f"URL f{self.safe!r} path {self._path!r} does not start with '/'")
+
+    @property
+    def path(self) -> str:
+        return self._path[1:]
+
+
+@dataclass
+class File:
+    _head: str = field(init = False, default = "")
+    _md5:  str = field(init = False, default = "")
+    _size: int = field(init = False, default = -1)
+
+    @property
+    def head(self) -> str:
+        return self._head
+
+    @property
+    def md5(self) -> str:
+        return self._md5
+
+    @property
+    def size(self) -> int:
+        return self._size
+
+    @classmethod
+    def new(cls: Type[FileType], *, md5: str = "") -> FileType:
+        local_file = cls()
+        local_file._md5 = md5
+        return local_file
+
+    def slurp(self, file: IO[bytes]):
+        md5 = hashlib.md5()
+        buf = file.read(HEAD_BLOCK)
+        md5.update(buf)
+        self._size = len(buf)
+        self._head = md5.hexdigest()
+        if len(buf) < HEAD_BLOCK:
+            self._md5  = self._head
+            return
+
+        # In python 3.11 we can do fast digest calculation
+        # self._md5 = hashlib.digest(file, lambda: md5).hexdigest()
+        # self._size = os.fstat(file.fileno()).st_size
+        while buf := file.read(READ_BLOCK):
+            md5.update(buf)
+            self._size += len(buf)
+        self._md5 = md5.hexdigest()
+
+FileType = TypeVar("FileType", bound=File)
+
+UNKNOWN_FILE = File()
+
+@dataclass
+class LocalFile(File):
+    # Is this mentioned by a fileserver whose IP address we recognized as local?
+    some_local_ip: bool = field(init = False, default = False)
+
+class Expect(Enum):
+    """Do we expect the download to finish on time ?"""
+    NO    = auto()
+    MAYBE = auto()
+    YES   = auto()
+
+class Speed(NamedTuple):
+    """
+    Knowledge about the current download speed.
+    Attributes will be None if we don't know (yet), e.g. no bytes have been
+    been transferred yet or not enough time has elapsed for a good estimate
+
+    Attributes:
+    * speed:     bytes per second or None if unknown
+    * eta:       Expected arrival time (monotonic clock) or None if unknown
+    * time_left: How much longer the download will take
+                 Can be negative if the download already finished in the past
+    * expect:    Do we expect the download to finish before timeout ?
+    """
+    speed: Optional[float]
+    eta:   Optional[float]
+    time_left: Optional[float]
+    expect: Expect
+
+
+@unique
+class CurlErrno(IntEnum):
+    # These must be negative to not clash with libcurl errno
+    DOWNLOADING		= -1
+    ABORTED		= -2
+
+    NONE		= 0
+
+    # libcurl errors for which we do something special
+    WRITE_ERROR		= pycurl.E_WRITE_ERROR
+    FILE_NOT_FOUND	= pycurl.E_REMOTE_FILE_NOT_FOUND
+    SSH_ERROR		= pycurl.E_SSH
+    # PROXY		= pycurl.E_PROXY
+    PROXY		= 97
+
+
+@dataclass
+class StreamingFile(File, BufferedIOBase):
+
+    SPEED_MIN_PERIOD:  ClassVar[float] = min(5.0, DOWNLOAD_TIMEOUT / 4)
+    SPEED_UNCERTAINTY: ClassVar[float] = 0.3
+    ABORT_FUZZ: ClassVar[float]        = 2.0
+
+    _expected_size: int = field(init = False, default = -2)
+    digest_md5: hashlib._Hash = field(init = False, default_factory = hashlib.md5)
+    first_size: int   = field(init = False, default = 0)
+    first_time: float = field(init = False, default = 0.0)
+    start_time: float = field(init = False, default = 0.0)
+    stop_time:  float = field(init = False, default = 0.0)
+    _errno: int = field(init = False, default_factory = lambda: CurlErrno.DOWNLOADING)
+    _error_message: str = field(init = False, default = "You should never see this")
+
+    def speed(self, now: float) -> Speed:
+        """Calculate transfer speed based on what we've seen so far.
+        Returns a Speed object
+        """
+
+        if self.stop_time:
+            # Already finished
+            period = self.stop_time - self.start_time
+            speed  = self._size - self.first_size / period if period else None
+            return Speed(speed, self.stop_time, self.stop_time - now, Expect.YES)
+
+        if not self.first_time or self.first_size == self._size:
+            # No bytes arrived yet. We have absolutely no clue about the speed
+            if not self.start_time:
+                raise AssertionError("speed before start")
+            return Speed(None, None, None, Expect.MAYBE)
+
+        period = now - self.first_time
+        if period < self.SPEED_MIN_PERIOD:
+            if period < 0.0:
+                raise AssertionError("Time runs backward")
+            return Speed(None, None, None, Expect.MAYBE)
+        speed = self._size - self.first_size / period
+        assert self._size > 0
+        if self._expected_size < self._size:
+            # Typically because expected_size == -1 (we don't know the size)
+            return Speed(speed, None, None, Expect.MAYBE)
+        time_left = (self._expected_size - self._size) / speed
+        abort = self.start_time + DOWNLOAD_TIMEOUT
+        uncertainty = 1.0 + self.SPEED_UNCERTAINTY
+        eta = now + time_left
+        if now + time_left * uncertainty < abort - self.ABORT_FUZZ:
+            expect = Expect.YES
+        elif now + time_left / uncertainty > abort + self.ABORT_FUZZ:
+            expect = Expect.NO
+            # Make it easier to compare the ETA from 2 speed calls
+            # Otherwise we would have to special case this
+            eta = inf
+        else:
+            expect = Expect.MAYBE
+        return Speed(speed, eta or TINY, time_left or TINY, expect)
+
+    def write(self, data) -> int:
+        if not data:
+            raise AssertionError("Size 0 write")
+        if self.closed:
+            raise ValueError("write to closed file")
+        if self._size < 0:
+            self.first_time = monotonic() or TINY
+            self.first_size = len(data)
+            self._size = 0
+        if self._size < HEAD_BLOCK and self._size + len(data) >= HEAD_BLOCK:
+            self.digest_md5.update(data[:HEAD_BLOCK-self._size])
+            self._head = self.digest_md5.hexdigest()
+            self.digest_md5.update(data[HEAD_BLOCK-self._size:])
+        else:
+            self.digest_md5.update(data)
+        self._size += len(data)
+        return len(data)
+
+    def start(self) -> None:
+        if self.start_time:
+            raise AssertionError("Double start")
+
+        self.start_time = monotonic() or TINY
+
+    def stop(self, errno: int, error_message: str, expected_size: int) -> None:
+        if not self.start_time:
+            raise AssertionError("Stop before start")
+        if self.stop_time:
+            raise AssertionError("Double stop")
+        self.stop_time = monotonic() or TINY
+        self.close()
+
+        self._expected_size = expected_size
+
+        if self._errno != CurlErrno.DOWNLOADING:
+            if self._errno == CurlErrno.ABORTED:
+                self._size = expected_size
+                # errno and message have already been set
+                return
+            raise AssertionError(f"Unexpected state with status errno {self._errno} (curl errno {errno}) on stop")
+
+        if errno == CurlErrno.NONE:
+            self._md5 = self.digest_md5.hexdigest()
+            if self._size < HEAD_BLOCK:
+                if self._size < 0:
+                    self._size = 0
+                self._head = self._md5
+            if expected_size >= 0:
+                if expected_size != self._size:
+                    raise ValueError(f"Got {self._size} bytes, expected {expected_size} bytes")
+            else:
+                self._expected_size = self._size
+            # So if errno == 0 then self.size == self.expected_size
+        else:
+            self._size = expected_size
+
+            if errno == CurlErrno.FILE_NOT_FOUND:
+                # Error message can be e.g. "550 Could not get file size" (FTP)
+                # This is too protocol detailed, so replace by our own message
+                error_message = MESSAGE_FILE_NOT_FOUND
+            elif errno == CurlErrno.SSH_ERROR:
+                # Error message can be "Failed to recv file" which is ugly
+                # PS: Error message does not come from libcurl itself
+                if error_message == "Failed to recv file":
+                    error_message = MESSAGE_FILE_NOT_FOUND
+            elif errno == CurlErrno.PROXY:
+                # More info is in  CURLINFO_PROXY_ERROR,
+                # but pycurl doesn't support that
+                # print("Proxy Error", c.getinfo(CURLINFO_LONG + 59))
+                error_message = "Proxy handshake error: " + error_message
+
+        self._errno = errno
+        self._error_message = error_message
+
+
+    def must_be_closed(self) -> None:
+        if not self.stop_time:
+            raise AssertionError("attempt to get status before download stop")
+
+    @property
+    def head(self) -> str:
+        self.must_be_closed()
+        return super().head
+
+    @property
+    def md5(self) -> str:
+        self.must_be_closed()
+        return super().md5
+
+    @property
+    def size(self) -> int:
+        self.must_be_closed()
+        return super().size
+
+    @property
+    def expected_size(self) -> int:
+        self.must_be_closed()
+        return self._expected_size
+
+    @property
+    def errno(self) -> int:
+        self.must_be_closed()
+        return self._errno
+
+    @property
+    def error_message(self) -> str:
+        self.must_be_closed()
+        return self._error_message
+
+    @property
+    def ok(self) -> bool:
+        """We succesfully received the whole file (errno == 0)"""
+        return self.errno == CurlErrno.NONE
+
+    @property
+    def file_exists(self) -> bool:
+        """We got errno == 0, received at least 1 byte or have a size result"""
+        return self.size >= 0 or self.expected_size >= 0
+
+
+class Status(Enum):
+    GOOD    = auto()
+    ERROR   = auto()
+    WARNING = auto()
+
+# I'd like to just inherit from URL, but unfortunately you can't inherit a
+# non-frozen dataclass from a frozen dataclass. So we have `url` as a member
+@dataclass
+class FileStatus(StreamingFile):
+    """Status of a file we download ourselves from a fileserver"""
+    NAME_LEN_MAX: ClassVar[int]  = 0
+    # Wait at least this long between maybe_abort checks (keep write fast)
+    CHECK_PERIOD: ClassVar[float]  = 1.0
+    # Set value to True instead of sys.stdout if you want STDOUT debug output
+    # This is because sys.stdout at compile time is different from the one at
+    # runtime (because rich.Progress temporarily replaces it)
+    DEBUG:	  ClassVar[Union[IO[Text], bool, None]] = None
+    # DEBUG:	  ClassVar[Union[IO[Text], bool, None]] = open("debug_file_status", "w")
+    # DEBUG:	  ClassVar[Union[IO[Text], bool, None]] = True
+
+    url: URL
+    proxy: Optional[URL0]
+    # Some name from some fileserver file. Typically this is unambiguous but
+    # in principle multiple devices can refere to the same file using different
+    # fileserver files with different names. So we just pick one. If the user
+    # wants to be confusing, we will let him be confusing
+    fileserver_name: str
+    named_file: NamedFile
+    effective_url: str = field(init = False, default = "")
+    next_check: float = field(init = False, default = 0.0)
+
+    @staticmethod
+    def debug(text: str) -> None:
+        if FileStatus.DEBUG:
+            print(text, file = sys.stdout if FileStatus.DEBUG is True else FileStatus.DEBUG)
+
+    def __post_init__(self) -> None:
+        if self.fileserver_name.casefold() != "default" and len(self.fileserver_name) > FileStatus.NAME_LEN_MAX:
+            FileStatus.NAME_LEN_MAX = len(self.fileserver_name)
+
+    @property
+    def fileserver_name_colon(self) -> str:
+        if self.fileserver_name.casefold() == "default":
+            return ""
+        return (self.fileserver_name + ": ").ljust(FileStatus.NAME_LEN_MAX+2)
+
+    def write(self, data) -> int:
+        written = super().write(data)
+        #if FileStatus.DEBUG:
+        #    FileStatus.debug(f"Write {self.url.path_name!r} {self.fileserver_name}: {written=}, size={self._size}")
+        if self._size < HEAD_BLOCK or self._size >= self._expected_size:
+            return written
+
+        now = monotonic()
+        if now < self.next_check:
+            return written
+
+        if not self.next_check:
+            self.next_check = self.first_time
+            if now < self.next_check:
+                return written
+        self.next_check = now + self.CHECK_PERIOD
+
+        abort_message = self.named_file.maybe_abort(self, now)
+        if not abort_message:
+            return written
+
+        # Returning -1 will automatically cause CURLE_WRITE_ERROR (23)
+        # (PS: in fact for at least TFTP I have observed this not happening)
+        # But we already set an errno here because by the time curl informs us
+        # of this we can have become NamedFile.best and we need to make sure
+        # that maybe_abort for some other FileStatus then recognizes that
+        # and doesn't abort too leading to nobody finishing the download
+        self._errno = CurlErrno.ABORTED
+        self._error_message = abort_message
+        if self.named_file.best is self:
+            self.named_file.best = None
+        return -1
+
+    def improve_status(self, *, expected_size: int = -1) -> None:
+        if expected_size >= 0:
+            self._expected_size = expected_size
+        if self._errno == CurlErrno.DOWNLOADING:
+            # Not downloading can in principle happen if we pre-set the error
+            # during write() but the connecion has not yet been collected and
+            # the show progress callback still calls this method. libcurl will
+            # probably never do this, but let's just be paranoid
+            self.named_file.improve_status(monotonic(), self)
+
+    def stop(self, errno: int, error_message: str, expected_size: int) -> None:
+        try:
+            super().stop(errno, error_message, expected_size)
+        except (ValueError, AssertionError) as exc:
+            raise type(exc)(f"Download {self.url.safe!r}: {exc.args[0]}") from None
+        self.named_file.final_status(self)
+
+    def _status(self) -> Tuple[Status, str]:
+        official = self.named_file.official
+        errno = self.errno
+        if errno == CurlErrno.NONE:
+            if self.md5 == official.md5:
+                return Status.GOOD, "Fully downloaded, correct MD5 %s" % self.md5
+            # Since the md5 is not the official one this must means we
+            # completely downloaded a file with the wrong md5
+            assert official.md5
+            return Status.ERROR, "Fully downloaded, bad MD5 %s" % self.md5
+
+        if official.head and self.head:
+            if self.head == official.head:
+                if self.expected_size == official.size or self.expected_size < 0:
+                    return Status.GOOD, "Partial download, looked correct"
+                return Status.ERROR, "Partial download, looked wrong"
+
+        return Status.ERROR, self.error_message
+
+    def status(self) -> Tuple[Status, str]:
+        status, message = self._status()
+        if status == Status.ERROR and not self.named_file.necessary:
+            status = Status.WARNING
+        return status, message
+
+
+@dataclass
+class NamedFile:
+    """
+    What we expect from a given file (typically an IOS or ROM file). This is
+    indexed without the path part of the name since we expect it to be the same
+    however we access it
+
+    Invariant: if best is not None:
+    * If best is finished then has errno == 0, it has the official
+      md5 and will never change again
+    * If best is unfinished then it is downloading
+    """
+
+    local_file_results: ClassVar[LocalFileResults]
+    necessary: int = field(init = False, default = 0)
+
+    name: str
+
+    # The MD5 we expect for this file. There should be only one value really
+    # (or none if the MD5 is unknown), but we collect all declarations so we
+    # can later on check that there is indeed only one (or zero)
+    md5s: Set[str] = field(init = False, default_factory = set)
+
+    # The head, md5 and size we decide to be the correct ones from a local file
+    official: File   = field(init = False, default = UNKNOWN_FILE)
+
+    # The best head, md5 and size we got from a fileserver download
+    # Best here means: the download with the earliest expected arrival time that
+    # still meets the MD5 expectations. So a finished file with a correct MD5
+    # here will never get replaced, a finished file with the wrong MD5 will be
+    # dropped. A finished file with errors will be dropped
+    best: Optional[FileStatus] = field(init = False, default = None)
+
+    speed_file: bool = field(init = False, default = True)
+    problems:   bool = field(init = False, default = False)
+
+    # We try to find the name in the local filesystem since getting info this
+    # way will be way faster than fetching ti from a fileserver. Here we collect
+    # candidate paths where we may find a file
+    local_files: Dict[Path, LocalFile] = field(init = False, default_factory = dict)
+
+    @property
+    def head(self) -> str:
+        if self.official is None:
+            raise AssertionError("Attempt to access unset official")
+        return self.official.head
+
+    @property
+    def md5(self) -> str:
+        if self.official is None:
+            raise AssertionError("Attempt to access unset official")
+        return self.official.md5
+
+    @property
+    def size(self) -> int:
+        if self.official is None:
+            raise AssertionError("Attempt to access unset official")
+        return self.official.size
+
+    def add_local_file(self, file: Path, local: bool, necessary: bool):
+        if file not in self.local_files:
+            local_file = LocalFile()
+            self.local_files[file] = local_file
+            self.local_file_results.put(file, local_file)
+        if local:
+            self.local_files[file].some_local_ip = True
+        if necessary:
+            self.necessary += 1
+
+    def problem(self, name: str) -> None:
+        if self.problems:
+            return
+        print(red(f"File {name!r}:"))
+        self.problems = True
+
+    def check_local(self, name: str) -> None:
+        # TODO: Put this stuff in a report
+
+        # Drop any local file candidates that do not exist
+        for path, local_file in list(self.local_files.items()):
+            if local_file.size < 0:
+                del self.local_files[path]
+
+        if self.md5s:
+            # Drop any local files whose MD5 does not match the expected set
+            for path, local_file in list(self.local_files.items()):
+                if local_file.md5 not in self.md5s:
+                    del self.local_files[path]
+
+        # We will very much trust files discovered through any fileserver with a
+        # local IP
+        local_md5s = { local_file.md5: path for path, local_file in self.local_files.items() if local_file.some_local_ip }
+        if len(local_md5s) == 1:
+            self.official = next(iter(self.local_files.values()))
+        elif local_md5s:
+            self.problem(name)
+            print("\tInconsistent local files:")
+            for path, local_file in self.local_files.items():
+                print("\t\t%s:\tmd5 %s, size %d", path, local_file.md5, local_file.size)
+
+        if self.md5s:
+            # There were MD5s declared for this name
+
+            if self.official is UNKNOWN_FILE:
+                # We didn't have a local file from a fileserver with local IP
+                # But maybe we can find a candidate among the stray files with
+                # the same sort of paths as used by the remote fileservers.
+                # Hopefully there is exactly 1...
+                matching_md5s = set(local_file.md5 for local_file in self.local_files.values())
+                if len(matching_md5s) == 1:
+                    self.official = next(iter(self.local_files.values()))
+
+            if len(self.md5s) > 1:
+                self.problem(name)
+                print("\tMultiple MD5s declared:")
+                for md5 in sorted(self.md5s):
+                    print("\t\t%s" % md5)
+                if len(local_md5s) == 1:
+                    # Otherwise we already complained and listed files
+                    print(f"\tI have local files with MD5 {self.md5!r}:")
+                    for path, local_file in self.local_files.items():
+                        print("\t\t%s:\tmd5 %s, size %d", path, local_file.md5, local_file.size)
+            elif self.official is UNKNOWN_FILE:
+                # Invariant: len(self.md5s) == 1
+                # We didn't find a local file with a matching MD5.
+                # So at least pick the single declared MD5
+                self.official = LocalFile.new(md5 = next(iter(self.md5s)))
+        elif not self.speed_file:
+            # No md5 declared. Do we have a unique one from the local files ?
+
+            md5s = set(local_file.md5 for local_file in self.local_files.values())
+            if self.official is UNKNOWN_FILE and len(md5s) == 1:
+                self.official = next(iter(self.local_files.values()))
+
+            self.problem(name)
+            print("\tNo MD5 declared")
+            if self.official is not UNKNOWN_FILE:
+                print(f"\tI have local files with MD5 {self.md5!r}:")
+                for path, local_file in self.local_files.items():
+                    if local_file.md5 == self.md5:
+                        print("\t\t%s" % path)
+
+    def final_status(self, new_status: FileStatus) -> None:
+        """Download complete. Do a final update of best"""
+
+        if new_status.errno:
+            # Errors during download. This file is not our best anymore
+            if self.best is new_status:
+                self.best = None
+            return
+
+        if not self.official.md5:
+            # We don't have a target md5, so the current best (if it exists)
+            # cannot be a finished download without error or it would have set
+            # the official MD5. So what we have now is better
+            self.best = new_status
+            # And indeed make this the official MD5
+            self.official = new_status
+            return
+
+        if new_status.md5 != self.official.md5:
+            # It is the wrong file. We will complain later during reporting
+            if self.best is new_status:
+                self.best = None
+            return
+
+        if self.official.size < 0:
+            # Official was just the MD5 placeholder
+            self.official = new_status
+
+        # We very much want this file
+        # The only way self.best.md5 can differ from self.official.md5 is if
+        # self.best.md5 is unset (empty)
+        if not self.best or self.best.md5 != self.official.md5:
+            self.best = new_status
+
+    def improve_status(self, now: float, new_status: FileStatus) -> Optional [Tuple[Speed, Speed]]:
+        """Check if a finished StreamingFile is better than what we have"""
+
+        # FileStatus objects may still have downloads in progress
+        # So many attributes must be accessed using the _ variant
+        assert new_status._errno == CurlErrno.DOWNLOADING
+
+        if self.best is None:
+            # However bad this download is, it is still better than nothing
+            FileStatus.debug("      best was empty")
+            self.best = new_status
+
+        old_status = self.best
+        FileStatus.debug(f"      {old_status.url.path_name!r} {old_status.fileserver_name}: {old_status._size} >= {new_status.fileserver_name} {new_status._size} (size)")
+
+        if old_status is new_status:
+            FileStatus.debug("*     best == new")
+            return None
+
+        if old_status._errno == CurlErrno.NONE:
+            # final_status() made sure
+            assert old_status._md5 == self.official.md5
+            FileStatus.debug("*     best is official")
+            return None
+
+        assert old_status._errno == CurlErrno.DOWNLOADING
+        # Both downloads are still in progress (without errors)
+        # First prefer the one whose expected size matches the official file
+        if self.official.size >= 0:
+            if old_status._expected_size == self.official.size and \
+               new_status._expected_size != self.official.size:
+                FileStatus.debug("*     new has expected, best doesn't")
+                return None
+            if old_status._expected_size != self.official.size and \
+               new_status._expected_size == self.official.size:
+                self.best = new_status
+                FileStatus.debug("*Swap best has expected, new doesn't")
+                return None
+
+        # Both downloads are still in progress and not is obviously better
+        # Take the one with the earliest ETA
+        old_speed = old_status.speed(now)
+        new_speed = new_status.speed(now)
+        old_eta = old_speed.eta or inf
+        new_eta = new_speed.eta or inf
+        if new_eta < old_eta:
+            FileStatus.debug(f"*Swap new is faster ({old_speed.time_left or inf:.3f} <  {new_speed.time_left or inf:.3f})")
+            self.best = new_status
+        else:
+            FileStatus.debug(f"*     old is faster ({old_speed.time_left or inf:.3f} >= {new_speed.time_left or inf:.3f})")
+        return (old_speed, new_speed)
+
+    def maybe_abort(self, new_status: FileStatus, now: float) -> str:
+        assert new_status._errno == CurlErrno.DOWNLOADING
+
+        # Make sure new_status has been mixed in
+        speeds = self.improve_status(now, new_status)
+
+        # improve_status() is guaranteed to set self.best (maybe to new_status)
+        old_status = self.best
+        assert old_status
+
+        if self.official.size >= 0:
+            # Irrespective of if this download will end up the same, we have
+            # enough information to make a solid guess about the result
+            # (through head and expected_size)
+            FileStatus.debug("|     Abort, we have an official target")
+            return "Aborted (we have enough data)"
+
+        # No point in comparing with ourselves
+        if new_status is old_status:
+            FileStatus.debug("|     Keep, single running download")
+            return ""
+
+        #if old_status._errno == CurlErrno.NONE:
+        #    # Irrespective of if this download will end up the same, we have
+        #    # enough information to make a solid guess about the result
+        #    # (through head and expected_size)
+        #    FileStatus.debug("|     Abort (old is finished)")
+        #    return "Aborted (we have enough data)"
+
+        # Any "finished" errors should have removed self.best
+        if old_status._errno != CurlErrno.DOWNLOADING:
+            raise AssertionError("best is not DOWNLOADING")
+
+        # Both are downloading. The only way we don't have speeds here is
+        # if the two have different expected sizes and one is official
+        if not speeds:
+            assert old_status._expected_size != new_status._expected_size
+            FileStatus.debug(f"|     Keep (differented expected sizes)")
+            return ""
+
+        old_speed, new_speed = speeds
+        if new_speed.expect == Expect.NO:
+            # We are probably not going to make it
+            FileStatus.debug(f"|     Abort (new download will not finish in time)")
+            return "Aborted (download too slow)"
+
+        # Don't just go with the fastest download as long as we have no
+        # confirmed MD5. But if their expected sizes and heads are the same
+        # we feel rather confident
+        if old_speed.expect == Expect.YES and \
+           old_status._head == new_status._head and \
+           old_status._expected_size == new_status._expected_size:
+            # The old download will probably succeed
+            FileStatus.debug(f"|     Abort old download will finish first")
+            return "Aborted (other download is faster)"
+
+        FileStatus.debug(f"|     Keep (both downloads are reasonable)")
+        return ""
+
+@dataclass
+class LocalFileResults:
+    # Start threads on demand. Currently this is rather silly since we submit
+    # jobs very quickly so there is little chance that the previous job has
+    # finished by the time we submit the next one. But at some point I want to
+    # read the metadata file as it grows and submit jobs as soon as they are
+    # available. Though even then it remains pointless in most cases unless
+    # there are devices that want different IOS images
+    # (or the very rare case of devices use different --fileserver settings)
+
+    max_threads: int = MD5_JOBS
+    threads: List[Thread] = field(init = False, default_factory = list)
+    # Not available yet in python 3.8
+    # queue: Queue[Tuple[IO[bytes], LocalFile]] = field(init = False, default_factory = Queue)
+    queue: Queue = field(init = False, default_factory = Queue)
+
+    def __post_init__(self) -> None:
+        if self.max_threads < 1:
+            raise ValueError(f"{self.max_threads=} must be positive")
+
+    def put(self, path: Path, local_file: LocalFile) -> None:
+        try:
+            file = open(path, "rb")
+        except OSError:
+            # If the file doesn't exist (or is in any other way inaccessable)
+            # we don't care anymore, this is only an attempt to gain time
+            return
+
+        # We don't want to run this under try(OSError) in case task creation
+        # raises OSError which we DO consider a problem
+        try:
+            if not self.threads or \
+               not self.queue.empty() and len(self.threads) < self.max_threads:
+                thread = Thread(target=self.process)
+                thread.start()
+                self.threads.append(thread)
+            self.queue.put_nowait((file, local_file))
+        except:
+            file.close()
+            raise
+
+    def process(self):
+        while True:
+            task: Optional[Tuple[IO[bytes], LocalFile]] = self.queue.get()
+            if task is None:
+                # Also stop the next thread(s)
+                self.queue.put_nowait(None)
+                break
+            file, local_file = task
+            try:
+                local_file.slurp(file)
+            finally:
+                file.close()
+            self.queue.task_done()
+
+    def __enter__(self) -> LocalFileResults:
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.queue.join()
+        self.queue.put_nowait(None)
+        print(f"Had {len(self.threads)} md5 threads")
+        while self.threads:
+            self.threads.pop().join()
+        assert self.queue.get_nowait() is None
+        assert self.queue.empty()
+
+
+@dataclass(frozen=True)
+class Fileserver(URL):
+    """Details for a fileserver identified by a specific URL"""
+
+    parent_: InitVar[Fileservers]
+    _parent: ReferenceType[Fileservers] = field(init = False)
+    proxy: Optional[URL0]
+
+    def __post_init__(self, *args):
+        parent: Fileservers = args[-1]
+        super().__setattr__("_parent", weakref(parent))
+        super().__post_init__(*args[:-1])
+
+    @property
+    def parent(self) -> Fileservers:
+        parent = self._parent()
+        if parent is None:
+            raise ReferenceError("parent is dead")
+        return parent
+
+    @property
+    def url_seen(self) -> Dict[str, FileStatus]:
+        return self.parent.url_seen[self.proxy]
+
+    # Maps filenames we want from this Fileserver to how many times they are necessary
+    file_status: Dict[str, FileStatus] = field(default_factory = dict)
+    # Names in fileservers files referring to this Fileserver
+    fileserver_files: DefaultDict[str, Set[str]] = field(default_factory = lambda: defaultdict(set))
+
+    def curl_url(self, file: str) -> str:
+        path = self.path + file
+        # ursplit alrready converted the scheme to lowercase
+        if self.scheme in ("scp", "sftp") and not path.startswith(("/", "~")):
+            path = "~/%s" % path
+        return self.url_root + path
+
+    def set_necessary(self, dir: Path, file: str, necessary: bool = True) -> None:
+        if file in INVALID:
+            return
+
+        local_file = dir / file
+        named_file = self.parent.named_file(local_file.name)
+
+        # Already there is normal since we add the same file for many devices
+        if file not in self.file_status:
+            curl_url = self.curl_url(file)
+            if curl_url not in self.url_seen:
+                fileserver_name = next(iter(next(iter(self.fileserver_files.values()))))
+                self.url_seen[curl_url] = FileStatus(URL(curl_url), self.proxy, fileserver_name, named_file)
+            self.file_status[file] = self.url_seen[curl_url]
+        named_file.add_local_file(local_file, self.is_local_ip, necessary)
+
+    def report(self, file, i) -> None:
+        print("[Fileserver_%d]" % i, file=file)
+
+        print("URL=%s" % self.safe, file=file)
+        print("Proxy=%s" % (self.proxy.safe if self.proxy else ""), file=file)
+        print("FileserverFile=", file=file)
+        for fileserver_file, names in self.fileserver_files.items():
+            for name in names:
+                print("\t%s:\t%s" % (name, fileserver_file), file=file)
+
+        files:  Dict[Status, Dict[str, Tuple[FileStatus, str]]] = defaultdict(dict)
+        for name, file_status in sorted(self.file_status.items()):
+            status, message = file_status.status()
+            files[status][name] = (file_status, message)
+
+        # Add 2 to account for ": "
+        max_name_len = max(map(len, self.file_status))+2
+
+        print("# md5=? means the download was unfinished so the md5 is unchecked", file=file)
+        print("FilesGood=", file=file)
+        # Python 3.8 will preserve the sorted order in which we added the files
+        for name, (file_status, _) in files[Status.GOOD].items():
+            size = file_status.expected_size
+            md5  = file_status.md5
+            if not md5:
+                if file_status.errno == CurlErrno.ABORTED:
+                    md5 = "? (download aborted)"
+                else:
+                    md5 = "? (download error %d)" % file_status.errno
+            print("\t%-*smd5=%-32s size=%10s" % (
+                max_name_len, name + ":",
+                md5,
+                str(size) if size >= 0 else "?"), file=file)
+
+        if files[Status.ERROR]:
+            for fileserver_file, names in self.fileserver_files.items():
+                for name in names:
+                    print(red(f"Fileserver {name!r} ({self.safe}):"))
+        print("# Files with errors and at least one cisco needs the file", file=file)
+        print("FilesError=", file=file)
+        # Python 3.8 will preserve the sorted order in which we added the files
+        for name, (file_status, message) in files[Status.ERROR].items():
+            message = "\t%-*s%s" % (max_name_len, name + ":", message)
+            print(message)
+            print(message, "(errno=%d)" % file_status.errno, file=file)
+
+        print("# Files with errors but all ciscos that would need this file are already up to date", file=file)
+        print("FilesWarning=", file=file)
+        # Python 3.8 will preserve the sorted order in which we added the files
+        for name, (file_status, message) in files[Status.WARNING].items():
+            message = "\t%-*s%s" % (max_name_len, name + ":", message)
+            print(message, "(errno=%d)" % file_status.errno, file=file)
+
+
+    def file_size(self, file: str) -> Optional[int]:
+        named_file = self.file_status[file].named_file
+        if named_file.official.size >= 0:
+            return named_file.official.size
+        if named_file.best and named_file.best.expected_size >= 0:
+            return named_file.best.expected_size
+        return None
+
+    def download_time(self, file: str, speed: float) -> Optional[float]:
+        if not speed:
+            return None
+        size = self.file_size(file)
+        # print(f"{file=} {size=} {speed=}")
+        return None if size is None else size / speed or TINY
+
+class ProxyUrl(NamedTuple):
+    proxy: Optional[URL0]
+    url:   str
+
+
+@dataclass
+class Fileservers(UserDict, MutableMapping[ProxyUrl, Fileserver]):
+    # Attribute data is used by UserDict
+    data: Dict[ProxyUrl, Fileserver] = field(init = False)
+
+    url_seen: Dict[Optional[URL0], Dict[str, FileStatus]] = field(init = False, default_factory = dict)
+    named_files: Dict[str, NamedFile] = field(init = False, default_factory = dict)
+
+    def __post_init__(self):
+        # Initialize the UserDict part (attribute data). No initialdata support
+        super().__init__()
+
+    """Mapping from Proxy/URLs to Fileserver details"""
+    def __getitem__(self, proxy_url: ProxyUrl) -> Fileserver:
+        if proxy_url not in self.data:
+            if proxy_url.proxy not in self.url_seen:
+                self.url_seen[proxy_url.proxy] = {}
+            self.data[proxy_url] = Fileserver(proxy_url.url, self, proxy_url.proxy)
+        fileserver: Fileserver = self.data[proxy_url]
+        return fileserver
+
+    def downloads(self) -> Iterator[FileStatus]:
+        return (file_status for url_seen in self.url_seen.values() for file_status in url_seen.values())
+
+    def register_md5(self, file: str, md5: str,
+                     speed_file: bool = False) -> None:
+        if file in INVALID:
+            return
+        named_file = self.named_file(file.rpartition("/")[-1])
+        if not speed_file:
+            named_file.speed_file = False
+        if md5 in INVALID:
+            if not md5:
+                return
+            raise AssertionError(f"File {file!r}: invalid {md5=}")
+        named_file.md5s.add(md5)
+
+    def named_file(self, name: str) -> NamedFile:
+        if "/" in name:
+            raise AssertionError(f"'/' in {name=}")
+        if name not in self.named_files:
+            self.named_files[name] = NamedFile(name)
+        return self.named_files[name]
+
+    def check_local(self) -> None:
+        for name, named_file in self.named_files.items():
+            named_file.check_local(name)
+
+    def check(self) -> None:
+        self.check_local()
+        check_files(self.downloads())
+
+    def report(self, work_dir: Path) -> None:
+        with open(work_dir / FILESERVER_REPORT, "w") as fileserver_report:
+            for i, fileserver in enumerate(self.values(), start = 1):
+                if i > 1:
+                    print("", file=fileserver_report)
+                fileserver.report(fileserver_report, i)
+
+    def update_IOS_report(self,
+                          metadata: ConfigParser,
+                          ios_report: ConfigParser) -> None:
+        # All devices will have the same work_dir value
+        work_dir = Path(metadata[metadata.sections()[0]]["work_dir"])
+
+        IOS_report = work_dir / IOS_REPORT
+        device_names: Set[str] = set()
+        device_name = ""
+        out = ""
+        slowest_time: Optional[float] = None
+        slowest_device = ""
+        fileserver_name = ""
+        any_speed = False
+        with open(IOS_report) as ios_file:
+            for line in ios_file:
+                if match := INI_HEADER.fullmatch(line):
+                    device_name = match[1]
+                    device_names.add(device_name)
+                    device_data = ios_report[device_name]
+                    if device_name not in metadata:
+                        device_name = ""
+                        out += line
+                        continue
+
+                    device_meta = metadata[device_name]
+
+                    fileserver_names = device_meta["FileserverName"].strip().splitlines()
+                    if len(fileserver_names) <= 1:
+                        time_speed = 0.0
+                    else:
+                        speed_begin = device_meta["SpeedBegin"]
+                        speed_end   = device_meta["SpeedEnd"]
+                        time_speed = epoch_from_cisco(speed_end) - epoch_from_cisco(speed_begin) or TINY
+
+                    if match := SPEED_PARSER.match(device_data["TransferSpeed"]):
+                        any_speed = True
+                        fileserver_name = match[1]
+                        speed = float(match[2])
+                        fileserver_urls  = device_meta["FileserverUrl" ].strip().splitlines()
+                        urls  = dict(zip(fileserver_names, fileserver_urls))
+                        proxy = URL0.from_string0(device_meta["Proxy"])
+
+                        fileserver = self[ProxyUrl(proxy, urls[fileserver_name])]
+                    else:
+                        speed = 0.0
+                        fileserver_name = ""
+
+                    upgrade_ios = device_data["UpgradeIOS"].casefold()
+                    if upgrade_ios == "no":
+                        time_ios = 0.0
+                    elif upgrade_ios != "yes":
+                        time_ios = None
+                    else:
+                        have_ios = device_data["TargetIOSStat"].casefold()
+                        if have_ios == "yes":
+                            time_ios = 0.0
+                        elif have_ios != "no":
+                            time_ios = None
+                        elif speed:
+                            time_ios = fileserver.download_time(device_data["TargetIOS"], speed)
+                        else:
+                            # We want the file but have no speed data
+                            time_ios = None
+
+
+                    upgrade_rom = device_data["UpgradeFirmware"].casefold()
+                    if upgrade_rom == "no":
+                        time_rom = 0.0
+                    elif upgrade_rom != "yes":
+                        time_rom = None
+                    else:
+                        have_rom = device_data["TargetFirmwareStat"].casefold()
+                        if have_rom == "yes":
+                            time_rom = 0.0
+                        elif have_rom != "no":
+                            time_rom = None
+                        elif speed:
+                            time_rom = fileserver.download_time(device_data["TargetFirmwareFile"], speed)
+                        else:
+                            # We want the file but have no speed data
+                            time_rom = None
+                    tt = (time_ios or 0.0) + (time_rom or 0.0)
+                    if time_ios is None and time_rom is None and \
+                       device_data["Upgrade"].casefold() != "no":
+                        time_total = None
+                    else:
+                        if tt:
+                            # Only add speed_time if there will be any download
+                            tt += time_speed
+                        time_total = tt
+                        slowest_time = max(slowest_time or 0.0, time_total)
+                        if slowest_time == time_total:
+                            slowest_device = device_name
+                            # This doesn't mean that the fileserver is slow.
+                            # In fact it is the fastest fileserver, but for the
+                            # device with the slowest download
+                            slowest_fileserver = fileserver_name
+
+                if not device_name:
+                    out += line
+                    continue
+
+                if match := ASSIGN_PARSER.match(line.expandtabs()):
+                    if match["upgrade_ios"]:
+                        out += "DownloadIOS=".ljust(match.end())
+                        if time_ios:
+                            out += "%.0f sec (from fileserver '%s')" % (time_ios, fileserver_name)
+                        elif time_ios is None:
+                            out += "?"
+                        else:
+                            out += "0"
+                    elif match["upgrade_rom"]:
+                        out += "DownloadFirmware=".ljust(match.end())
+                        if time_rom:
+                            out += "%.0f sec (from fileserver '%s')" % (time_rom, fileserver_name)
+                        elif time_rom is None:
+                            out += "?"
+                        else:
+                            out += "0"
+                    elif match["upgrade"]:
+                        out += "SpeedTest=".ljust(match.end())
+                        out += "%.0f sec\n" % time_speed
+                        out += "Download=".ljust(match.end())
+                        if time_total:
+                            out += "%.0f sec (from fileserver '%s')" % (
+                                time_total - time_speed,
+                                fileserver_name)
+                        elif time_total is None:
+                            out += "?"
+                        else:
+                            out += "0"
+                    elif match["skip"]:
+                        continue
+                    else:
+                        raise AssertionError(f"Unhandled line: {line.rstrip()!r}")
+                    out += "\n"
+                out += line
+
+        missed_devices = set(ios_report.sections()) - device_names
+        if missed_devices:
+            raise AssertionError(f"{missed_devices=}")
+
+        tmp_report = work_dir / (IOS_REPORT + ".tmp")
+        tmp_report.write_text(out)
+        try:
+            tmp_report.replace(IOS_report)
+        except:
+            tmp_report.unlink(missing_ok = True)
+            raise
+
+        if slowest_time:
+            # Since we have a slowest_time that means for that device speed !=0
+            # which means slowest_fileserver has been set
+            message = f"{slowest_time:.0f} sec for device {slowest_device!r} from fileserver {slowest_fileserver!r}"
+        elif slowest_time is None:
+            message = "?"
+            if not any_speed:
+                message += " (no device speed measurements succeeded)"
+        else:
+            message = "0 sec (No downloads needed)"
+        print("Slowest download estimate: %s" % message)
+
+def red(text: str) -> str:
+    """Wrap text in ANSI escapes so it will display as red
+
+    Args:
+        text: The text to be decorated as red
+
+    Returns:
+        Decorated text
+    """
+    result: str = colorama.Style.BRIGHT + colorama.Fore.RED + text + colorama.Fore.RESET + colorama.Style.NORMAL
+    return result
+
+@dataclass
+class ShowProgress:
+    progress: Progress
+    task: TaskID = field(init = False)
+    last_total: int = field(init = False, default = 0)
+    last_count: int = field(init = False, default = 0)
+    _file_status: Optional[FileStatus] = field(init = False, default = None)
+
+    def __post_init__(self):
+        self.task = self.progress.add_task("Ready", total = None, start = False)
+
+    @property
+    def file_status(self) -> FileStatus:
+        if not self._file_status:
+            raise AssertionError("Use of file_status_file outside of [start, stop]")
+        return self._file_status
+
+    def start(self, file_status: FileStatus) -> None:
+        self.last_total = 0
+        self.last_count = 0
+        self._file_status = file_status
+        description = "%s%-4s %s" % (file_status.fileserver_name_colon,
+                                     file_status.url.scheme.upper(),
+                                     file_status.url.path_name)
+
+        self.progress.update(self.task,
+                             description = description,
+                             completed = 0,
+                             total = None)
+        # print(f"Start task {self.task}")
+        self.progress.start_task(self.task)
+
+    def stop(self) -> None:
+        self._file_status = None
+        # print(f"Stop task {self.task}")
+        self.progress.stop_task(self.task)
+
+    def update(self, dl_total: int, dl_now: int, ul_total: int, ul_now: int) -> None:
+        # dl_total will never be negative in the current libcurl (7.86.0)
+        if dl_total != self.last_total and dl_total >= 0:
+            FileStatus.debug(f"Show  {self.file_status.url.path_name!r} {self.file_status.fileserver_name} sets expected_size = {dl_total}")
+            self.file_status.improve_status(expected_size = dl_total)
+
+            self.last_total = dl_total
+            self.progress.update(self.task, total = dl_total)
+
+        if dl_now != self.last_count:
+            self.last_count = dl_now
+            self.progress.update(self.task, completed = dl_now)
+
+    def update_float(self, *args: float) -> None:
+        self.update(*list(map(int, args)))
+
+
+@contextmanager
+def curls(nr_curls: int) -> Iterator[Tuple[pycurl.CurlMulti, List[pycurl.Curl], Dict[int, FileStatus]]]:
+    """Helper function for robust curl resource management """
+
+    # We should ignore SIGPIPE when using pycurl.NOSIGNAL
+    # See the libcurl tutorial for more info.
+    signal(SIGPIPE, SIG_IGN)
+    # At some point we could make signal SIGPIPE into a managed resource too
+    # For now don't bother, there is nothing that cares about SIGPIPE afterwards
+
+    # Sharing probably doesn't do much for our case
+    SHARE = True
+
+    m = pycurl.CurlMulti()
+    try:
+        if SHARE:
+            s = pycurl.CurlShare()
+            s.setopt(pycurl.SH_SHARE, pycurl.LOCK_DATA_COOKIE)
+            s.setopt(pycurl.SH_SHARE, pycurl.LOCK_DATA_DNS)
+            s.setopt(pycurl.SH_SHARE, pycurl.LOCK_DATA_SSL_SESSION)
+            # This constant is only available with libcurl version >= 7.57.0
+            # s.setopt(pycurl.SH_SHARE, pycurl.LOCK_DATA_CONNECT)
+        try:
+            # Unfortunately pycurl doesn't seem to support  CURLOPT_PRIVATE
+            user_data: Dict[int, FileStatus] = {}
+
+            curls = list(map(lambda i: pycurl.Curl(), range(nr_curls)))
+            try:
+                for c in curls:
+                    if SHARE:
+                        c.setopt(pycurl.SHARE, s)
+                    c.setopt(pycurl.NOSIGNAL, 1)
+
+                yield (m, curls.copy(), user_data)
+            finally:
+                for c in curls:
+                    # c.setopt(pycurl.SHARE, None)
+                    if id(c) in user_data:
+                        m.remove_handle(c)
+                    c.close()
+        finally:
+            if SHARE:
+                s.close()
+    finally:
+        m.close
+
+def check_files(urls: Iterable[FileStatus]) -> None:
+    # Code based on retriever-multi.py in the pycurl examples
+
+    todo = deque(urls)
+    if not todo:
+        return
+
+    nr_jobs = min(CURL_JOBS, len(todo))
+    # Pre-allocate a list of curl objects
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(bar_width = None),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+        console = Console(
+            emoji = False,
+            theme = Theme({
+                # progress bar style
+                "bar.complete":	GREEN,
+                "bar.back":	BLUE,
+                "bar.finished":	GREEN,
+            })),
+        transient = PROGRESS_TRANSIENT,
+        refresh_per_second = 1
+    ) as progress, curls(nr_jobs) as (m, freelist, user_data):
+        for c in freelist:
+            c.setopt(pycurl.BUFFERSIZE, COPY_BLOCK)
+            c.setopt(pycurl.FOLLOWLOCATION, True)
+            c.setopt(pycurl.MAXREDIRS, 5)
+            c.setopt(pycurl.CONNECTTIMEOUT, CONNECT_TIMEOUT)
+            c.setopt(pycurl.TIMEOUT, DOWNLOAD_TIMEOUT)
+            c.setopt(pycurl.TFTP_BLKSIZE, TFTP_BLOCK_SIZE)
+            c.setopt(pycurl.NOPROGRESS, False)
+
+            # c.setopt(pycurl.SSH_COMPRESSION, 1)
+            # Integer set on an unknown option is explicitely allowed
+            # by the pycurl docs
+            # However, it is only supported starting at 7.56.0
+            # c.setopt(268, 1)
+
+        shows = { id(c): ShowProgress(progress) for c in freelist }
+
+        #print("PycURL %s (compiled against 0x%x)" %
+        #      (pycurl.version, pycurl.COMPILE_LIBCURL_VERSION_NUM))
+        print(f"Getting {len(todo)} URLs using {nr_jobs} connections\n(unfinished downloads are often just probes)")
+
+        # Main loop
+        nr_todo = len(todo)
+        while nr_todo:
+            # If there is an url to process and a free curl object, add to multi stack
+            while freelist and todo:
+                file_status = todo.popleft()
+                file_status.start()
+                c = freelist.pop()
+                # c.setopt(pycurl.PRIVATE, file_status)
+                c.setopt(pycurl.PROXY,
+                         file_status.proxy.url if file_status.proxy else "")
+                c.setopt(pycurl.URL, file_status.url.url)
+                c.setopt(pycurl.WRITEDATA, file_status)
+                show = shows[id(c)]
+                show.start(file_status)
+                # XFERINFOFUNCTION is available starting from 7.32.0
+                # c.setopt(pycurl.XFERINFOFUNCTION, show.update)
+                c.setopt(pycurl.PROGRESSFUNCTION, show.update)
+                m.add_handle(c)
+                # store some info
+                user_data[id(c)] = file_status
+
+            # We just call select() to sleep until some more data is available.
+            timeout = m.timeout()
+            if timeout < 0:
+                timeout = 1000
+            m.select(timeout / 1000)
+
+            # Run the internal curl state machine for the multi stack
+            while True:
+                ret, nr_handles = m.perform()
+                if ret != pycurl.E_CALL_MULTI_PERFORM:
+                    break
+
+            # Check for curl objects which have terminated
+            # Add them to the freelist
+            while True:
+                nr_q, ok_list, err_list = m.info_read()
+                for c, errno, errmsg in chain(((c, 0, "") for c in ok_list),
+                                              err_list):
+                    m.remove_handle(c)
+                    freelist.append(c)
+                    # file_status = c.getinfo(pycurl.PRIVATE)
+                    file_status = user_data.pop(id(c))
+                    file_status.effective_url = c.getinfo(pycurl.EFFECTIVE_URL)
+                    # CONTENT_LENGTH_DOWNLOAD returns a float and -1 if unknown
+                    # However, older libcurl versions can return 0 for unknown
+                    # So convert 0 to -1 since we don't expect empty files
+                    file_status.stop(
+                        errno = errno,
+                        error_message = errmsg,
+
+                        expected_size = int(c.getinfo(pycurl.CONTENT_LENGTH_DOWNLOAD)) or -1)
+                    show = shows[id(c)]
+                    show.stop()
+                nr_todo -= len(ok_list) + len(err_list)
+                if nr_q == 0:
+                    break
+        # This is not the cauee of the slow exit through proxy. What is ?
+        # del shows
+    print("Downloads done")
+
+def check_fileserver(metadata: ConfigParser):
+    # metadata.write(sys.stdout)
+    meta_devices = metadata.sections()
+    if not meta_devices:
+        raise AssertionError("No devices in metadata file")
+    for device_name in meta_devices:
+        if "FinalLine" not in metadata[device_name]:
+            raise AssertionError(f"No final line in metadata for device {device_name}")
+
+    # All devices will have the same work_dir value
+    work_dir = Path(metadata[meta_devices[0]]["work_dir"])
+    if not work_dir.exists():
+        raise SystemExit(f"Work directory {work_dir!r} does not exist (anymore)")
+    if not work_dir.is_dir():
+        raise SystemExit(f"Work directory {work_dir!r} exists but is not a directory")
+
+    ios_report = CaseConfigParser(
+        delimiters = ("=",),
+        empty_lines_in_values = False,
+        interpolation = None)
+    ios_report.read(work_dir / IOS_REPORT)
+    devices = ios_report.sections()
+    # If a device exits with [ERROR] or [BUG] it will typically be in devices
+    # but not meta_devices, so we expect metadevices to be subset of devices
+    if set(meta_devices) - set(devices):
+        raise AssertionError("Inconsistent devices between IOS_report.txt and metadata")
+
+    # Map Proxy/URL to FileServer
+    fileservers = Fileservers()
+    # ios_report.write(sys.stdout)
+
+    with LocalFileResults() as NamedFile.local_file_results:
+        skipped: List[str] = []
+        for device_name in meta_devices:
+            device = ios_report[device_name]
+            if "FinalLine" not in device:
+                # Some error occured during output
+                raise AssertionError(f"No final line in IOS report for device {device_name!r}")
+                # skipped.append(device_name)
+                # continue
+
+            device_meta = metadata[device_name]
+            assert work_dir == Path(device_meta["work_dir"])
+            fileserver_file = device_meta["Fileserver"]
+            # timeout = device_meta["Timeout"]
+            # connect_timeout = device_meta["ConnectTimeout"]
+            speed_file = device_meta["SpeedFile"]
+            speed_md5  = device_meta["SpeedMd5"]
+            proxy      = URL0.from_string0(device_meta["Proxy"])
+            fileserver_names = device_meta["FileserverName"].strip().splitlines()
+            fileserver_urls  = device_meta["FileserverUrl" ].strip().splitlines()
+            fileserver_dirs  = device_meta["FileserverDir" ].strip().splitlines()
+            if len(fileserver_names) != len(fileserver_urls):
+                raise AssertionError("Inconsistent lengths of 'FileserverName' and 'FileserverUrl'")
+
+            fileservers.register_md5(speed_file, speed_md5,
+                                     speed_file = True)
+
+            target_ios_file = device["TargetIOS"]
+            target_ios_md5  = device["TargetIOSMd5"]
+            upgrade_ios = device["UpgradeIOS"].casefold()
+            fileservers.register_md5(target_ios_file, target_ios_md5)
+
+            target_rom_file = device["TargetFirmwareFile"]
+            target_rom_md5  = device["TargetFirmwareMd5"]
+            upgrade_rom = device["UpgradeFirmware"].casefold()
+            fileservers.register_md5(target_rom_file, target_rom_md5)
+
+            for name, url, dir in zip(fileserver_names, fileserver_urls, fileserver_dirs):
+                path_dir = Path(dir)
+                fileserver = fileservers[ProxyUrl(proxy, url)]
+                fileserver.fileserver_files[fileserver_file].add(name)
+                fileserver.set_necessary(path_dir, speed_file)
+                fileserver.set_necessary(path_dir, target_ios_file, upgrade_ios == "yes")
+                fileserver.set_necessary(path_dir, target_rom_file, upgrade_rom == "yes")
+
+
+    fileservers.check()
+
+    fileservers.report(work_dir)
+    fileservers.update_IOS_report(metadata, ios_report)
 
 if __name__=='__main__':
-    helper()
+    options = [
+        Option(long = "--speed",
+               help = "Measure fileserver speeds",
+               actions_name = "report_speed"),
+        Option(long = "--check-fileserver",
+               help = "Check availability of files on fileserver",
+               actions_name = "report_speed",
+               exec = False)]
+    os.environ["IOS_UPGRADE_REPORT_FILESERVER"] = ""
+    args = helper(extra_options = options)
+
+    # We return here only if and only if --check-fileserver is given
+
+    with NamedTemporaryFile(mode="r") as tmp_file:
+        os.environ["IOS_UPGRADE_REPORT_FILESERVER"] = tmp_file.name
+        result = run_args(args)
+        if result.returncode != 0:
+            if result.returncode < 0:
+                raise SystemExit(f"Killed by signal {-result.returncode}")
+            if result.returncode & ~FAILED_EXIT_BITS:
+                sys.exit(result.returncode)
+
+        metadata = CaseConfigParser(
+            delimiters = ("=",),
+            empty_lines_in_values = False,
+            interpolation = None)
+        metadata.read_file(tmp_file)
+
+    check_fileserver(metadata)
+    exit(result.returncode)

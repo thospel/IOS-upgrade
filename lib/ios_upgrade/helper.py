@@ -4,7 +4,6 @@ import os
 import re
 import argparse
 from pathlib import Path
-from contextlib import suppress
 from subprocess import run, CompletedProcess
 from stat import S_ISREG
 from typing import Optional, List, Dict, Union, NamedTuple
@@ -20,7 +19,8 @@ DEVICE_APPLY = "device-apply"
 DEVICE_APPLY_NAME = "ios-upgrade"
 PACKAGE_VERSION = "1.0"
 PREFIX = "IOS-upgrade."
-VERSION_MIN = "1.5.55"
+VERSION_MIN = "1.6.13"
+IOS_TABLE_OPTION = "--ios-table"
 IOS_TABLE = "cisco_ios.table.txt"
 ENV_IOS_TABLE    = "ios_table"
 ENV_ACTIONS_NAME = "actions_name"
@@ -39,9 +39,21 @@ DROP_OPTIONS = set("""
 
 # class MyParser(ArgumentParser):
 
+class Option(NamedTuple):
+    long:	str
+    help:	str
+    actions_name: Optional[str] = None
+    exec: Optional[bool] = None
+
+    def no(self):
+        return "--no-" + self.long[2:]
+
 class Args(NamedTuple):
     parsed_args: Dict[str, Union[str, bool]]
     extra_args: List[str]
+    extra_options: Dict[str, Optional[bool]]
+    actions_name: Optional[str]
+    exec: bool
 
     def argv(self) -> List[str]:
         argv = []
@@ -50,7 +62,7 @@ class Args(NamedTuple):
                 argv.append(option)
             elif value is False:
                 if not option.startswith("--"):
-                    raise AssertionError(f"Connot set {option} to False")
+                    raise AssertionError(f"Cannot set {option} to False")
                 argv.append("--no-" + option[2:])
             elif isinstance(value, str):
                 argv += [option, value]
@@ -88,7 +100,21 @@ def red(text: str) -> str:
     result: str = colorama.Style.BRIGHT + colorama.Fore.RED + text + colorama.Fore.RESET + colorama.Style.NORMAL
     return result
 
-def parse_args() -> Args:
+def argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        usage = "%(prog)s [options] [--] [<device>...]",
+        add_help = False,
+        allow_abbrev = False,
+        argument_default=argparse.SUPPRESS)
+    parser.add_argument(
+        IOS_TABLE_OPTION,
+        default = IOS_TABLE,
+        metavar = "FILE",
+        dest = IOS_TABLE_OPTION,
+        help = f"IOS table file (default {IOS_TABLE!r})")
+    return parser
+
+def parse_args(options: Optional[List[Option]]) -> Args:
     result = run([DEVICE_APPLY_NAME, "--help", "--actions"],
                  executable = DEVICE_APPLY,
                  text=True,
@@ -113,11 +139,21 @@ def parse_args() -> Args:
                                     post_usage,
                                     flags = re.IGNORECASE | re.MULTILINE)
 
-    parser = argparse.ArgumentParser(
-        usage = "%(prog)s [options] [--] [<device>...]",
-        add_help = False,
-        allow_abbrev = False,
-        argument_default=argparse.SUPPRESS)
+    parser = argument_parser()
+    if options is None:
+        options = []
+
+    for extra_option in options:
+        parser.add_argument(
+            extra_option.long,
+            action = "store_true",
+            dest = extra_option.long,
+            help = extra_option.help)
+        parser.add_argument(
+            extra_option.no(),
+            action = "store_true",
+            dest = extra_option.no(),
+            help = argparse.SUPPRESS)
 
     for header, body in zip(parts[::2], parts[1::2]):
         # Skip the initial newline
@@ -197,28 +233,60 @@ def parse_args() -> Args:
         parser.error("Unknown option %s" %
                      ", ".join(dict.fromkeys(bad_args)))
 
-    argv = []
+    parsed_args: Dict[str, Union[str, bool]] = vars(parsed)
+    extra_options: Dict[str, Optional[bool]] = {}
+    actions_name: Optional[str] = None
+    exec: bool = True
+    for extra_option in options:
+        value = parsed_args.pop(extra_option.long, None)
+        assert not isinstance(value, str)
+        extra_options[extra_option.long] = value
+        if extra_options[extra_option.long]:
+            if extra_option.no() in parsed_args:
+                parser.error(f"Cannot have both {extra_option.long!r} and {extra_option.no()!r}")
+            if extra_option.actions_name is not None:
+                actions_name = extra_option.actions_name
+            if extra_option.exec is not None:
+                exec = extra_option.exec
+        elif parsed_args.pop(extra_option.no(), None):
+            extra_options[extra_option.long] = False
+
     return Args(
-        parsed_args = vars(parsed),
-        extra_args = ["--"] + more_args + extra_args
+        parsed_args = parsed_args,
+        extra_args = ["--"] + more_args + extra_args,
+        extra_options = extra_options,
+        actions_name = actions_name,
+        exec = exec
     )
 
-def helper(*, exec: bool = True, name: Optional[str] = None) -> CompletedProcess:
-    args = parse_args()
+def helper(*,
+           extra_options: Optional[List[Option]] = None,
+           name: Optional[str] = None) -> Args:
+    args = parse_args(extra_options)
 
-    if not name:
+    if name is None:
+        name = args.actions_name
+    if name is None:
         name = Path(sys.argv[0]).name
         if not name.startswith(PREFIX):
             raise SystemExit(red(f"Assertion: Wrapper script name {name!r} does not start with {PREFIX!r}"))
         name = name[len(PREFIX):]
 
-    os.environ[ENV_ACTIONS_NAME] = name
+    if name == "check":
+        args.setdefault("--work-dir", "-")
+    if args.parsed_args.get("--work-dir", ".") == "":
+        del args.parsed_args["--work-dir"]
+    args.setdefault("--verbose", True)
+    args.setdefault("--check-alone", False)
+    args.parsed_args["--actions-file"] = str(CONFIG_DIR / ("%s.actions.txt" % name))
+    ios_table = args.parsed_args.pop(IOS_TABLE_OPTION)
+    assert isinstance(ios_table, str)
 
     # Make sure IOS_TABLE is usable. These tests are a race condition since the
     # situation can have changed by the time of the actual usage, but that does
     # not matter since that usage will still error in case of problems, it's
     # just that these error will be a lot less clear
-    ios_table_path = Path(IOS_TABLE).resolve()
+    ios_table_path = Path(ios_table).resolve()
     try:
         stat = ios_table_path.stat()
     except IOError as exc:
@@ -230,8 +298,9 @@ def helper(*, exec: bool = True, name: Optional[str] = None) -> CompletedProcess
             pass
     except IOError as exc:
         raise SystemExit(red(str(exc).replace(str(ios_table_path), IOS_TABLE))) from None
-    os.environ[ENV_IOS_TABLE]   = str(ios_table_path)
+    os.environ[ENV_IOS_TABLE] = str(ios_table_path)
 
+    # Check cisco IOS table
     result = run([DEVICE_APPLY_NAME,
                   "--version-min", VERSION_MIN,
                   "--no-verbose",
@@ -245,15 +314,11 @@ def helper(*, exec: bool = True, name: Optional[str] = None) -> CompletedProcess
         print(red(result.stderr.strip() or result.stdout.strip() or "Unknown error"))
         sys.exit(result.returncode if result.returncode > 0 else 1)
 
-    if name == "check":
-        args.setdefault("--work-dir", "-")
-    if args.parsed_args.get("--work-dir", ".") == "":
-        del args.parsed_args["--work-dir"]
-    args.setdefault("--verbose", True)
-    args.setdefault("--check-alone", False)
-    args.parsed_args["--actions-file"] = str(CONFIG_DIR / ("%s.actions.txt" % name))
-    program = [DEVICE_APPLY_NAME] + args.argv()
-    if exec:
+    if args.exec:
+        program = [DEVICE_APPLY_NAME] + args.argv()
         os.execvp(DEVICE_APPLY, program)
-    else:
-        return run(program, executable = DEVICE_APPLY)
+    return args
+
+def run_args(args: Args) -> CompletedProcess:
+    program = [DEVICE_APPLY_NAME] + args.argv()
+    return run(program, executable = DEVICE_APPLY)

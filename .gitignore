@@ -150,6 +150,7 @@ cython_debug/
 # Project specific:
 device-apply_*
 *.gpg
+cisco_ios.table.txt
 
 # Other stuff
 bl?b

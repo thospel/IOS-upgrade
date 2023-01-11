@@ -39,11 +39,7 @@ urls_sorted =
 [If Not,FromVariable=debug]
 0
   [Print]
-    proto = ${global.fileserver_protocol}
-    host  = ${global.fileserver_host}
-    path  = ${global.fileserver_path}
-    user  = ${global.fileserver_user}
-    pass  = ${global.fileserver_password}
+    url = ${ "".join("\n\t" + fs.url() for fs in global.fileservers.values()) }
 [EndIf]
 
 [Scope]

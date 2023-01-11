@@ -1,12 +1,12 @@
 # Get the current time
-[Commands DefineVariable=time]
+[Commands DefineVariable=clock]
 show clock
 
-[If FromVariable=time,Anchor=Substring]
+[If FromVariable=clock,Anchor=Substring]
 \n
     [Bug]
-    multiline 'show clock' output '${time}'
+    multiline 'show clock' output '${clock}'
 [EndIf]
 
 [Return]
-time
+clock

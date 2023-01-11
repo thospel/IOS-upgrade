@@ -6,10 +6,7 @@ define: speed_file
 define: speed_md5
 
 [Define]
-report_fileserver = ${env.IOS_UPGRADE_REPORT_FILESERVER or global.empty}
-fileserver_names = ${global.fileserver_name}
-fileserver_urls  = ${global.fileserver_url}
-fileserver_dirs  = ${global.fileserver_dir}
+report_fileserver = ${env.IOS_UPGRADE_REPORT_FILESERVER or ""}
 
 [If Not,FromVariable=report_fileserver]
 ${}
@@ -21,43 +18,21 @@ ${}
     ConnectTimeout = ${global.option_connect_timeout}
     Proxy = ${global.option_proxy}
     Fileserver= ${global.option_fileserver}
-    FileserverName =
-
-    [While Regex,FromVariable=fileserver_names,DefineVariable=fileserver_name]
-    .+
-        [Print FileFromVariable=report_fileserver]
-        ${global.tab}${fileserver_name}
-    [EndWhile]
-
-    [Print FileFromVariable=report_fileserver]
-    FileserverDir =
-
-    [While Regex,FromVariable=fileserver_dirs,DefineVariable=fileserver_dir]
-    .+
-        [Print FileFromVariable=report_fileserver]
-        ${global.tab}${fileserver_dir}
-    [EndWhile]
-
-    [Print FileFromVariable=report_fileserver]
-    FileserverUrl =
-
-    [While Regex,FromVariable=fileserver_urls,DefineVariable=fileserver_url]
-    .+
-        [Print FileFromVariable=report_fileserver]
-        ${global.tab}${fileserver_url}
-    [EndWhile]
+    FileserverName = ${ "".join("\n\t" + (name or "default") for name in global.fileservers) }
+    FileserverDir = ${ "".join("\n\t" + fs.dir.prefix for fs in global.fileservers.values()) }
+    FileserverUrl = ${ "".join("\n\t" + fs.url() for fs in global.fileservers.values()) }
 
     # Notice that the speed test will involve the first non readonly command
     # so it will trigger a "show reload" (and maybe "show users") and their time
     # will also be counted. This is *GOOD*, since they will also trigger during
     # the speed test for the real download so they should be counted
     [Include File=time.actions.txt]
-    define: time
+    define: clock
 
     [Print FileFromVariable=report_fileserver]
     SpeedFile  = ${speed_file}
     SpeedMd5   = ${speed_md5}
-    SpeedBegin = ${time}
+    SpeedBegin = ${clock}
 [EndIf]
 
 [Include File=speed.actions.txt]
@@ -70,31 +45,17 @@ define: speeds_sorted
 [If Not,FromVariable=report_fileserver]
 ${}
     [Include File=time.actions.txt]
-    define: time
+    define: clock
 
     [Print FileFromVariable=report_fileserver]
-    SpeedEnd = ${time}
+    SpeedEnd = ${clock}
     FinalLine = 1
 [EndIf]
 
 [Print FileFromVariable=report_file]
 ${}
 ${}# Speeds are sorted from high to low
-TransferSpeed=
-
-[While Regex,FromVariable=speeds_sorted]
-(?<fileserver_name>\S+)\s+(?<speed>.*\S)
-    [Define]
-    prefix = ${global.tab}${fileserver_name :10}
-    [If Regex,FromVariable=speed]
-    (?<error>.*)-\d+
-        [Print FileFromVariable=report_file]
-        ${prefix} ${error}
-    [Else]
-        [Print FileFromVariable=report_file]
-        ${prefix} ${speed :>8} bytes/sec
-    [EndIf]
-[EndWhile]
+TransferSpeed= ${"".join("\n\t%-10s %s" % (speed.name, speed.error or "%8d bytes/sec" % speed.speed) for speed in speeds_sorted) }
 
 ## If we have more than one fileserver we report the fastest
 #[If Regex,FromVariable=speeds,Anchor=SubString]
